@@ -18,10 +18,12 @@ import (
 	"github.com/agentmesh/agentmesh/internal/grpcserver"
 	"github.com/agentmesh/agentmesh/internal/policy"
 	"github.com/agentmesh/agentmesh/internal/ratelimit"
+	"github.com/agentmesh/agentmesh/internal/models"
 	"github.com/agentmesh/agentmesh/internal/registry"
 	"github.com/agentmesh/agentmesh/internal/rest"
 	"github.com/agentmesh/agentmesh/internal/router"
 	"github.com/agentmesh/agentmesh/internal/score/guardloop"
+	"github.com/agentmesh/agentmesh/internal/secrets"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
@@ -71,6 +73,19 @@ func main() {
 	limiter := ratelimit.New(rdb, "agentmesh")
 
 	keys := auth.NewMemoryKeyStore(getenv("AGENTMESH_DEV_API_KEY", "agentmesh-dev-key"))
+	secStore, err := secrets.NewStore(cfg.Etcd.Endpoints, cfg.Etcd.Prefix, cfg.Secrets.MasterKey)
+	if err != nil {
+		log.Fatal("secrets store", zap.Error(err))
+	}
+	defer secStore.Close()
+
+	catalogPath := models.ResolvePath(cfg.Models.CatalogPath)
+	catalog, err := models.Load(catalogPath)
+	if err != nil {
+		log.Fatal("models catalog", zap.String("path", catalogPath), zap.Error(err))
+	}
+	log.Info("models catalog loaded", zap.String("path", catalog.Path()), zap.Int("models", len(catalog.Models())), zap.Int("providers", len(catalog.Providers())))
+
 	srv := grpcserver.New(reg, policies, engine, br, limiter, cfg)
 
 	grpcServer := grpc.NewServer()
@@ -87,7 +102,7 @@ func main() {
 		}
 	}()
 
-	gw := rest.NewGateway(fmt.Sprintf("localhost:%d", cfg.ControlPlane.GRPCPort), keys, policies, reg)
+	gw := rest.NewGateway(fmt.Sprintf("localhost:%d", cfg.ControlPlane.GRPCPort), keys, policies, reg, secStore, catalog)
 	httpSrv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.ControlPlane.HTTPPort),
 		Handler: mountHTTP(gw.Routes()),

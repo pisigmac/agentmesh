@@ -56,6 +56,7 @@ Send `Authorization: Bearer <api_key>` on every `/v1/*` call. Scope tenants with
 | [02-FEATURES.md](02-FEATURES.md) | Product capabilities |
 | [05-API.md](05-API.md) | REST usage |
 | [22-ROUTING-QUESTIONS.md](22-ROUTING-QUESTIONS.md) | Route questions to the right agent |
+| [23-MODEL-INFERENCE.md](23-MODEL-INFERENCE.md) | Provider keys + console chat |
 | [21-MANUAL-TESTING.md](21-MANUAL-TESTING.md) | Step-by-step manual QA |
 | [12-ARCHITECTURE.md](12-ARCHITECTURE.md) | System design |
 | [15-DEPLOY.md](15-DEPLOY.md) | Helm / Docker |

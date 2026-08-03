@@ -58,7 +58,16 @@ Configuration is loaded from environment variables in `internal/config/config.go
 |----------|---------|-------------|
 | `AUTH_MODE` | `api_key` | `api_key` or `clerk` |
 
-Development uses in-memory key `dev` for org `default` when wired in main.
+Development uses in-memory key `agentmesh-dev-key` for org `default` when wired in main.
+
+## Model provider secrets (inference)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AGENTMESH_SECRETS_KEY` | falls back to `AGENTMESH_DEV_API_KEY` | Master key for AES-GCM encryption of org provider API keys in etcd |
+| `MODELS_CATALOG_PATH` | `deploy/models.yaml` (or `/etc/agentmesh/models.yaml` in containers) | Providers + models YAML catalog |
+
+Org keys are stored via `PUT /v1/secrets/providers/{id}` (ids from YAML) and used by `POST /v1/chat`. Catalog: [`deploy/models.yaml`](../deploy/models.yaml). See [23-MODEL-INFERENCE.md](23-MODEL-INFERENCE.md).
 
 ## GuardLoop (optional)
 

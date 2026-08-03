@@ -8,5 +8,7 @@ RUN CGO_ENABLED=0 go build -o /control-plane ./cmd/control-plane
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates
 COPY --from=builder /control-plane /usr/local/bin/control-plane
+COPY deploy/models.yaml /etc/agentmesh/models.yaml
+ENV MODELS_CATALOG_PATH=/etc/agentmesh/models.yaml
 EXPOSE 8080 9090
 ENTRYPOINT ["/usr/local/bin/control-plane"]

@@ -113,3 +113,94 @@ export async function getPolicy(opts?: RequestOptions): Promise<unknown> {
 export async function putPolicy(doc: unknown, opts?: RequestOptions) {
   return request("/v1/policy", { method: "PUT", body: JSON.stringify(doc) }, opts);
 }
+
+export type ModelInfo = {
+  id: string;
+  label: string;
+  provider: string;
+  api_model: string;
+  capability: string;
+  description?: string;
+  default_base_url?: string;
+};
+
+export type ProviderInfo = {
+  id: string;
+  label: string;
+  api_style: string;
+  default_base_url?: string;
+  requires_base_url?: boolean;
+  key_hint?: string;
+};
+
+export type ProviderSecretView = {
+  provider: string;
+  label?: string;
+  configured: boolean;
+  key_hint?: string;
+  base_url?: string;
+  api_model?: string;
+  updated_at?: string;
+};
+
+export async function listModels(opts?: RequestOptions) {
+  const data = await request<{ models: ModelInfo[]; providers?: ProviderInfo[] }>("/v1/models", undefined, opts);
+  return data.models ?? [];
+}
+
+export async function listProviders(opts?: RequestOptions) {
+  const data = await request<{ providers: ProviderInfo[] }>("/v1/models/providers", undefined, opts);
+  return data.providers ?? [];
+}
+
+export async function listProviderSecrets(opts?: RequestOptions) {
+  const data = await request<{ secrets: ProviderSecretView[] }>("/v1/secrets/providers", undefined, opts);
+  return data.secrets ?? [];
+}
+
+export async function putProviderSecret(
+  provider: string,
+  body: { api_key?: string; base_url?: string; api_model?: string },
+  opts?: RequestOptions,
+) {
+  return request<{ status: string }>(
+    `/v1/secrets/providers/${encodeURIComponent(provider)}`,
+    { method: "PUT", body: JSON.stringify(body) },
+    opts,
+  );
+}
+
+export async function deleteProviderSecret(provider: string, opts?: RequestOptions) {
+  return request<{ status: string }>(
+    `/v1/secrets/providers/${encodeURIComponent(provider)}`,
+    { method: "DELETE" },
+    opts,
+  );
+}
+
+export type ChatResult = {
+  answer: string;
+  model_id: string;
+  provider: string;
+  api_model: string;
+  destination_agent_id?: string;
+  destination_agent_type?: string;
+  endpoint_url?: string;
+  trace_id?: string;
+  routed_via_mesh?: boolean;
+  usage?: Record<string, unknown>;
+};
+
+export async function chatCompletion(
+  body: {
+    model: string;
+    question?: string;
+    system?: string;
+    messages?: { role: string; content: string }[];
+    route_via_mesh?: boolean;
+    source_agent_id?: string;
+  },
+  opts?: RequestOptions,
+) {
+  return request<ChatResult>("/v1/chat", { method: "POST", body: JSON.stringify(body) }, opts);
+}

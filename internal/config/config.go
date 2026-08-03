@@ -16,6 +16,8 @@ type Config struct {
 	Redis        RedisConfig
 	ClickHouse   ClickHouseConfig
 	Auth         AuthConfig
+	Secrets      SecretsConfig
+	Models       ModelsConfig
 	GuardLoop    GuardLoopConfig
 	TraceLens    TraceLensConfig
 	Circuit      CircuitConfig
@@ -56,6 +58,15 @@ type ClickHouseConfig struct {
 
 type AuthConfig struct {
 	Mode string // api_key | clerk
+}
+
+type SecretsConfig struct {
+	// MasterKey encrypts org provider API keys at rest in etcd (AES-GCM).
+	MasterKey string
+}
+
+type ModelsConfig struct {
+	CatalogPath string
 }
 
 type GuardLoopConfig struct {
@@ -111,6 +122,12 @@ func Load() Config {
 		},
 		Auth: AuthConfig{
 			Mode: getenv("AUTH_MODE", "api_key"),
+		},
+		Secrets: SecretsConfig{
+			MasterKey: getenv("AGENTMESH_SECRETS_KEY", getenv("AGENTMESH_DEV_API_KEY", "agentmesh-dev-key")),
+		},
+		Models: ModelsConfig{
+			CatalogPath: getenv("MODELS_CATALOG_PATH", ""),
 		},
 		GuardLoop: GuardLoopConfig{
 			Enabled:  getenvBool("GUARDLOOP_ENABLED", false),

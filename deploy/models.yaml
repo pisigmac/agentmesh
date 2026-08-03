@@ -1,0 +1,197 @@
+# Model and provider catalog for AgentMesh console chat / inference.
+# Sourced from KubeMind router gateway.yaml (services/router/config/gateway.yaml).
+# Override path with MODELS_CATALOG_PATH.
+
+providers:
+  - id: ollama
+    label: Ollama (local)
+    api_style: openai
+    requires_base_url: true
+    key_hint: Optional; many Ollama installs ignore the key (use "ollama")
+    # Set base_url in UI secrets, e.g. http://host.docker.internal:11434/v1
+
+  - id: vllm
+    label: vLLM (local)
+    api_style: openai
+    requires_base_url: true
+    key_hint: Optional bearer for your vLLM OpenAI-compatible server
+
+  - id: deepseek_local
+    label: DeepSeek (local)
+    api_style: openai
+    requires_base_url: true
+    key_hint: Optional; OpenAI-compatible DeepSeek local gateway
+
+  - id: groq
+    label: Groq
+    api_style: openai
+    default_base_url: https://api.groq.com/openai/v1
+    key_hint: gsk_… from console.groq.com
+
+  - id: google
+    label: Google Gemini
+    api_style: openai
+    default_base_url: https://generativelanguage.googleapis.com/v1beta/openai
+    key_hint: AIza… from Google AI Studio (OpenAI-compatible endpoint)
+
+  - id: openrouter
+    label: OpenRouter
+    api_style: openai
+    default_base_url: https://openrouter.ai/api/v1
+    key_hint: sk-or-… from openrouter.ai
+
+  - id: openai
+    label: OpenAI
+    api_style: openai
+    default_base_url: https://api.openai.com/v1
+    key_hint: sk-… from platform.openai.com
+
+  - id: anthropic
+    label: Anthropic
+    api_style: anthropic
+    default_base_url: https://api.anthropic.com
+    key_hint: sk-ant-… from console.anthropic.com
+    # For an OpenAI-compatible Anthropic proxy, use api_style openai via a custom
+    # provider entry or point secrets base_url at LiteLLM and use openai-style models.
+
+  - id: custom
+    label: Custom (OpenAI-compatible)
+    api_style: openai
+    requires_base_url: true
+    key_hint: API key for your OpenAI-compatible gateway
+
+models:
+  # --- ollama ---
+  - id: ollama-llama3.1
+    label: Llama 3.1 (Ollama)
+    provider: ollama
+    api_model: llama3.1
+    capability: model_ollama
+    description: Local Llama 3.1 via Ollama
+
+  - id: ollama-mistral
+    label: Mistral (Ollama)
+    provider: ollama
+    api_model: mistral
+    capability: model_ollama
+    description: Local Mistral via Ollama
+
+  - id: ollama-deepseek-r1
+    label: DeepSeek R1 (Ollama)
+    provider: ollama
+    api_model: deepseek-r1
+    capability: model_ollama
+    description: DeepSeek R1 pulled in Ollama
+
+  # --- vllm ---
+  - id: vllm-llama-3-8b
+    label: Llama 3 8B Instruct (vLLM)
+    provider: vllm
+    api_model: meta-llama/Meta-Llama-3-8B-Instruct
+    capability: model_vllm
+    description: Meta Llama 3 8B Instruct on vLLM
+
+  - id: vllm-deepseek-r1-distill
+    label: DeepSeek R1 Distill Qwen 7B (vLLM)
+    provider: vllm
+    api_model: deepseek-ai/DeepSeek-R1-Distill-Qwen-7B
+    capability: model_vllm
+    description: Distilled DeepSeek R1 on vLLM
+
+  # --- deepseek_local ---
+  - id: deepseek-local-r1
+    label: DeepSeek R1 (local)
+    provider: deepseek_local
+    api_model: deepseek-r1
+    capability: model_deepseek_local
+    description: Local DeepSeek R1 gateway
+
+  - id: deepseek-local-r1-7b
+    label: DeepSeek R1 7B (local)
+    provider: deepseek_local
+    api_model: deepseek-r1:7b
+    capability: model_deepseek_local
+    description: Local DeepSeek R1 7B
+
+  - id: deepseek-local-r1-14b
+    label: DeepSeek R1 14B (local)
+    provider: deepseek_local
+    api_model: deepseek-r1:14b
+    capability: model_deepseek_local
+    description: Local DeepSeek R1 14B
+
+  # --- groq ---
+  - id: groq-llama-3.1-70b
+    label: Llama 3.1 70B (Groq)
+    provider: groq
+    api_model: llama-3.1-70b
+    capability: model_groq
+    description: Fast Llama 3.1 70B on Groq
+
+  - id: groq-mixtral-8x7b
+    label: Mixtral 8x7B (Groq)
+    provider: groq
+    api_model: mixtral-8x7b
+    capability: model_groq
+    description: Mixtral on Groq
+
+  - id: groq-llama-3.1-8b-instant
+    label: Llama 3.1 8B Instant (Groq)
+    provider: groq
+    api_model: llama-3.1-8b-instant
+    capability: model_groq
+    description: Low-latency Llama 3.1 8B on Groq
+
+  # --- google ---
+  - id: gemini-1.5-flash
+    label: Gemini 1.5 Flash
+    provider: google
+    api_model: gemini-1.5-flash
+    capability: model_google
+    description: Google Gemini 1.5 Flash (OpenAI-compatible API)
+
+  # --- openrouter ---
+  - id: openrouter-llama-3.1-70b
+    label: Llama 3.1 70B (OpenRouter)
+    provider: openrouter
+    api_model: meta-llama/llama-3.1-70b
+    capability: model_openrouter
+    description: Llama 3.1 70B via OpenRouter
+
+  # --- openai ---
+  - id: gpt-4o-mini
+    label: GPT-4o mini
+    provider: openai
+    api_model: gpt-4o-mini
+    capability: model_openai
+    description: Fast OpenAI chat model
+
+  - id: gpt-4o
+    label: GPT-4o
+    provider: openai
+    api_model: gpt-4o
+    capability: model_openai
+    description: OpenAI flagship multimodal chat
+
+  # --- anthropic (KubeMind gateway list) ---
+  - id: claude-3-5-sonnet-20241022
+    label: Claude 3.5 Sonnet
+    provider: anthropic
+    api_model: claude-3-5-sonnet-20241022
+    capability: model_anthropic
+    description: Anthropic Claude 3.5 Sonnet
+
+  - id: claude-3-5-haiku-20241022
+    label: Claude 3.5 Haiku
+    provider: anthropic
+    api_model: claude-3-5-haiku-20241022
+    capability: model_anthropic
+    description: Faster Anthropic Haiku
+
+  # --- custom ---
+  - id: custom-openai-compat
+    label: Custom (OpenAI-compatible)
+    provider: custom
+    api_model: default
+    capability: model_custom
+    description: Uses org custom base URL + model name from secrets

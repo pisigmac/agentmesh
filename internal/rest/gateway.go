@@ -11,8 +11,11 @@ import (
 	agentmeshv1 "github.com/agentmesh/agentmesh/gen/agentmesh/v1"
 	"github.com/agentmesh/agentmesh/internal/auth"
 	"github.com/agentmesh/agentmesh/internal/grpcserver"
+	"github.com/agentmesh/agentmesh/internal/inference"
+	"github.com/agentmesh/agentmesh/internal/models"
 	"github.com/agentmesh/agentmesh/internal/policy"
 	"github.com/agentmesh/agentmesh/internal/registry"
+	"github.com/agentmesh/agentmesh/internal/secrets"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -22,10 +25,21 @@ type Gateway struct {
 	keys     auth.KeyStore
 	policies *policy.Store
 	registry *registry.Store
+	secrets  *secrets.Store
+	infer    *inference.Client
+	catalog  *models.Catalog
 }
 
-func NewGateway(grpcAddr string, keys auth.KeyStore, policies *policy.Store, reg *registry.Store) *Gateway {
-	return &Gateway{grpcAddr: grpcAddr, keys: keys, policies: policies, registry: reg}
+func NewGateway(grpcAddr string, keys auth.KeyStore, policies *policy.Store, reg *registry.Store, sec *secrets.Store, catalog *models.Catalog) *Gateway {
+	return &Gateway{
+		grpcAddr: grpcAddr,
+		keys:     keys,
+		policies: policies,
+		registry: reg,
+		secrets:  sec,
+		infer:    inference.NewClient(),
+		catalog:  catalog,
+	}
 }
 
 func (g *Gateway) Routes() chi.Router {
@@ -47,6 +61,12 @@ func (g *Gateway) Routes() chi.Router {
 		v1.Get("/circuit/{agent_id}", g.circuitState)
 		v1.Get("/policy", g.getPolicy)
 		v1.Put("/policy", g.putPolicy)
+		v1.Get("/models", g.listModels)
+		v1.Get("/models/providers", g.listProviders)
+		v1.Get("/secrets/providers", g.listSecrets)
+		v1.Put("/secrets/providers/{provider}", g.putSecret)
+		v1.Delete("/secrets/providers/{provider}", g.deleteSecret)
+		v1.Post("/chat", g.chat)
 	})
 	return r
 }

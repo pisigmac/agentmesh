@@ -14,6 +14,7 @@ Run from repo root or any directory (scripts resolve paths automatically).
 | [`stop-local.sh`](stop-local.sh) | Stop local CP/DP processes |
 | [`seed-policy.sh`](seed-policy.sh) | PUT example org policy to control plane |
 | [`seed-all-agents.sh`](seed-all-agents.sh) | Register all nine adapter types under `default` org |
+| [`seed-model-agents.sh`](seed-model-agents.sh) | Placeholder agents for `model_*` chat routing metadata |
 | [`start-frontend-dev.sh`](start-frontend-dev.sh) | Next.js dev server on host (`43000`, no Docker) |
 
 ## Examples
