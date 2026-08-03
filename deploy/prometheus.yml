@@ -1,0 +1,10 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: control-plane
+    static_configs:
+      - targets: ["control-plane:8080"]
+  - job_name: dataplane
+    static_configs:
+      - targets: ["dataplane:8081"]

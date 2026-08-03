@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "agentmesh.fullname" . }}-control-plane
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: agentmesh-control-plane
+  template:
+    metadata:
+      labels:
+        app: agentmesh-control-plane
+    spec:
+      containers:
+        - name: control-plane
+          image: {{ .Values.controlPlane.image }}
+          ports:
+            - containerPort: {{ .Values.controlPlane.httpPort }}
+            - containerPort: {{ .Values.controlPlane.grpcPort }}
+          env:
+            - name: ETCD_ENDPOINTS
+              value: {{ join "," .Values.etcd.endpoints | quote }}
+            - name: REDIS_ADDR
+              value: {{ .Values.redis.addr | quote }}
+            - name: CLICKHOUSE_ADDR
+              value: {{ .Values.clickhouse.addr | quote }}
+            - name: CLICKHOUSE_DATABASE
+              value: {{ .Values.clickhouse.database | quote }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.controlPlane.httpPort }}
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: {{ .Values.controlPlane.httpPort }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "agentmesh.fullname" . }}-control-plane
+spec:
+  minAvailable: {{ .Values.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      app: agentmesh-control-plane
+---
+{{- if .Values.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "agentmesh.fullname" . }}-control-plane
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "agentmesh.fullname" . }}-control-plane
+  minReplicas: {{ .Values.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.targetCPUUtilizationPercentage }}
+{{- end }}

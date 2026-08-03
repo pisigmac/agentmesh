@@ -1,0 +1,32 @@
+{
+  "org_id": "default",
+  "routing": {
+    "default_strategy": "least-latency",
+    "default_timeout_ms": 30000,
+    "default_max_retries": 2
+  },
+  "rate_limit": {
+    "routes_per_minute": 1000,
+    "per_agent_routes_per_minute": 200,
+    "register_per_minute": 60
+  },
+  "circuit": {
+    "default": {
+      "failure_threshold": 5,
+      "window_seconds": 60,
+      "half_open_seconds": 30
+    },
+    "by_agent_type": {
+      "cursor": {
+        "failure_threshold": 3,
+        "window_seconds": 60,
+        "half_open_seconds": 30
+      },
+      "devin": {
+        "failure_threshold": 8,
+        "window_seconds": 120,
+        "half_open_seconds": 45
+      }
+    }
+  }
+}

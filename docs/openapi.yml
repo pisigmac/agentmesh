@@ -1,0 +1,375 @@
+openapi: 3.0.3
+info:
+  title: AgentMesh Control Plane API
+  version: 1.0.0
+  description: REST gateway for agent registration, discovery, routing, and circuit state.
+servers:
+  - url: http://localhost:48080
+    description: Local control plane HTTP
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API key
+  schemas:
+    CostProfile:
+      type: object
+      properties:
+        cost_per_request_usd:
+          type: number
+          format: double
+        cost_per_1k_tokens_usd:
+          type: number
+          format: double
+    HealthStatus:
+      type: object
+      properties:
+        agent_id:
+          type: string
+        healthy:
+          type: boolean
+        message:
+          type: string
+        reported_at_unix:
+          type: integer
+          format: int64
+    AgentRegistration:
+      type: object
+      required:
+        - agent_id
+        - agent_type
+        - endpoint_url
+      properties:
+        org_id:
+          type: string
+        agent_id:
+          type: string
+        agent_type:
+          type: string
+          enum:
+            - cursor
+            - claude_code
+            - github_copilot
+            - openai_codex
+            - aider
+            - continue_dev
+            - windsurf
+            - devin
+            - custom
+        capabilities:
+          type: array
+          items:
+            type: string
+        endpoint_url:
+          type: string
+          format: uri
+        health:
+          $ref: '#/components/schemas/HealthStatus'
+        cost_profile:
+          $ref: '#/components/schemas/CostProfile'
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+    RegistrationAck:
+      type: object
+      properties:
+        agent_id:
+          type: string
+        lease_ttl_seconds:
+          type: integer
+          format: int64
+        message:
+          type: string
+    AgentEndpoint:
+      type: object
+      properties:
+        agent_id:
+          type: string
+        agent_type:
+          type: string
+        endpoint_url:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        estimated_latency_ms:
+          type: number
+        success_rate:
+          type: number
+        cost_score:
+          type: number
+        rank_score:
+          type: number
+        org_id:
+          type: string
+    DiscoverResponse:
+      type: object
+      properties:
+        agents:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentEndpoint'
+    RoutePayload:
+      type: object
+      required:
+        - capability
+      properties:
+        org_id:
+          type: string
+        source_agent_id:
+          type: string
+        capability:
+          type: string
+        routing_strategy:
+          type: string
+          enum:
+            - capability-match
+            - least-latency
+            - least-cost
+            - round-robin
+            - score-based
+        fallback_agent_types:
+          type: array
+          items:
+            type: string
+        payload_hint:
+          type: string
+          format: byte
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+    RouteResponse:
+      type: object
+      properties:
+        destination_agent_id:
+          type: string
+        destination_agent_type:
+          type: string
+        endpoint_url:
+          type: string
+        injected_headers:
+          type: object
+          additionalProperties:
+            type: string
+        fallback_chain:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentEndpoint'
+        timeout_ms:
+          type: integer
+        max_retries:
+          type: integer
+        trace_context:
+          type: string
+    CircuitState:
+      type: object
+      properties:
+        state:
+          type: string
+          enum:
+            - closed
+            - open
+            - half-open
+        failure_count:
+          type: integer
+        opened_at_unix:
+          type: integer
+          format: int64
+        half_open_at_unix:
+          type: integer
+          format: int64
+        threshold:
+          type: integer
+        window_seconds:
+          type: integer
+    ErrorBody:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+paths:
+  /v1/agents/register:
+    post:
+      operationId: registerAgent
+      summary: Register or refresh an agent
+      parameters:
+        - name: X-Org-ID
+          in: header
+          schema:
+            type: string
+        - name: X-Workspace-ID
+          in: header
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentRegistration'
+            example:
+              agent_id: cursor-1
+              agent_type: cursor
+              endpoint_url: http://localhost:9001
+              capabilities:
+                - code_gen
+      responses:
+        '201':
+          description: Registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistrationAck'
+        '400':
+          description: Invalid JSON
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '401':
+          description: Unauthorized
+  /v1/agents/discover:
+    get:
+      operationId: discoverAgents
+      summary: Discover agents for a capability
+      parameters:
+        - name: X-Org-ID
+          in: header
+          schema:
+            type: string
+        - name: capability
+          in: query
+          schema:
+            type: string
+        - name: routing_strategy
+          in: query
+          schema:
+            type: string
+        - name: max_cost
+          in: query
+          schema:
+            type: number
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: org_id
+          in: query
+          description: Discovery scope (defaults to X-Org-ID). Org `default` aggregates all tenants.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Ranked agents
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiscoverResponse'
+        '401':
+          description: Unauthorized
+  /v1/orgs:
+    get:
+      operationId: listOrgs
+      summary: List org IDs known to the registry
+      responses:
+        '200':
+          description: Org identifiers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orgs:
+                    type: array
+                    items:
+                      type: string
+        '401':
+          description: Unauthorized
+  /v1/route:
+    post:
+      operationId: routeRequest
+      summary: Route to a destination agent
+      parameters:
+        - name: X-Org-ID
+          in: header
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoutePayload'
+            example:
+              capability: code_gen
+              routing_strategy: least-latency
+      responses:
+        '200':
+          description: Routing decision
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteResponse'
+        '401':
+          description: Unauthorized
+  /v1/circuit/{agent_id}:
+    get:
+      operationId: getCircuitState
+      summary: Circuit breaker state for a destination agent
+      parameters:
+        - name: agent_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: X-Org-ID
+          in: header
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Circuit state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CircuitState'
+        '401':
+          description: Unauthorized
+  /v1/policy:
+    get:
+      operationId: getOrgPolicy
+      summary: Get org policy (routing defaults, rate limits, circuit overrides)
+      responses:
+        '200':
+          description: OrgPolicy document
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          description: Unauthorized
+    put:
+      operationId: putOrgPolicy
+      summary: Update org policy in etcd
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Updated
+        '401':
+          description: Unauthorized

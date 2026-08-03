@@ -1,0 +1,47 @@
+groups:
+  - name: agentmesh.rules
+    rules:
+      - alert: AgentMeshHighRouteFailureRate
+        expr: |
+          (
+            sum(rate(agentmesh_route_total{status="error"}[5m]))
+            /
+            sum(rate(agentmesh_route_total[5m]))
+          ) > 0.05
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: AgentMesh route failure rate above 5%
+          description: More than 5% of routes are failing over the last 10 minutes.
+
+      - alert: AgentMeshRouteLatencyP99High
+        expr: |
+          histogram_quantile(
+            0.99,
+            sum(rate(agentmesh_route_latency_ms_bucket[5m])) by (le, org)
+          ) > 120
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: AgentMesh p99 route latency high
+          description: p99 route latency exceeds 120ms for org {{ $labels.org }}.
+
+      - alert: AgentMeshControlPlaneDown
+        expr: up{job="agentmesh-control-plane"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: AgentMesh control plane scrape target down
+          description: Prometheus cannot scrape control plane metrics.
+
+      - alert: AgentMeshNoRoutes
+        expr: sum(rate(agentmesh_route_total[30m])) == 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: No AgentMesh routes observed
+          description: Zero route throughput for 30 minutes—possible outage or misconfigured scraper.

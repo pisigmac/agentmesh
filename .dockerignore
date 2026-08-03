@@ -1,0 +1,12 @@
+.git
+.run
+bin/
+**/.next
+**/node_modules
+frontend/node_modules
+**/*.log
+**/.env.local
+docs/
+ops/
+scripts/
+*.md

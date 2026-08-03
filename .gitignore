@@ -1,0 +1,14 @@
+/bin/
+/gen/
+*.exe
+.env
+.idea/
+frontend/node_modules/
+frontend/.next/
+deploy/helm/**/charts/
+.run/
+
+# Keep locally; not committed (marketing / GTM fluff)
+docs/07-MARKETING.md
+docs/08-SOCIAL.md
+docs/17-PRICING.md

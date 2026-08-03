@@ -1,0 +1,98 @@
+services:
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.17
+    command: >
+      /usr/local/bin/etcd --advertise-client-urls=http://0.0.0.0:2379
+      --listen-client-urls=http://0.0.0.0:2379
+    ports:
+      - "42379:2379"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "46379:6379"
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3
+    ports:
+      - "48123:8123"
+      - "49000:9000"
+    environment:
+      CLICKHOUSE_DB: agentmesh
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+
+  control-plane:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.control-plane
+    ports:
+      - "48080:8080"
+      - "49090:9090"
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      REDIS_ADDR: redis:6379
+      CLICKHOUSE_ADDR: clickhouse:9000
+      CLICKHOUSE_DATABASE: agentmesh
+      AGENTMESH_DEV_API_KEY: agentmesh-dev-key
+      CONTROL_PLANE_HTTP_PORT: 8080
+      CONTROL_PLANE_GRPC_PORT: 9090
+      # Unset = allow any localhost/127.0.0.1 dashboard origin (43000, 43300, etc.)
+      AGENTMESH_CORS_ORIGINS: ${AGENTMESH_CORS_ORIGINS:-}
+    depends_on:
+      - etcd
+      - redis
+      - clickhouse
+
+  dataplane:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.dataplane
+    ports:
+      - "48081:8081"
+    environment:
+      CONTROL_PLANE_ADDR: control-plane:9090
+      DATAPLANE_HTTP_PORT: 8081
+      TRACELENS_ENABLED: "false"
+    depends_on:
+      - control-plane
+
+  prometheus:
+    image: prom/prometheus:v2.54.0
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "49091:9090"
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    ports:
+      - "43001:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.frontend
+      args:
+        NEXT_PUBLIC_CONTROL_PLANE_URL: ${NEXT_PUBLIC_CONTROL_PLANE_URL:-http://localhost:48080}
+    ports:
+      - "43300:3000"
+    environment:
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+    depends_on:
+      - control-plane
+
+  tracelens-collector:
+    profiles: ["tracelens"]
+    image: node:22-alpine
+    working_dir: /app
+    command: sh -c "echo tracelens-collector-placeholder && sleep infinity"
+    ports:
+      - "48082:8080"
+
+volumes:
+  clickhouse_data:

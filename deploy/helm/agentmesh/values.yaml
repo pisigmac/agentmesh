@@ -1,0 +1,38 @@
+replicaCount: 2
+
+controlPlane:
+  image: agentmesh/control-plane:0.1.0
+  grpcPort: 9090
+  httpPort: 8080
+
+dataPlane:
+  image: agentmesh/dataplane:0.1.0
+  httpPort: 8081
+  mode: gateway
+
+etcd:
+  endpoints:
+    - etcd:2379
+
+redis:
+  addr: redis:6379
+
+clickhouse:
+  addr: clickhouse:9000
+  database: agentmesh
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 20
+  targetCPUUtilizationPercentage: 70
+
+pdb:
+  minAvailable: 1
+
+tracelens:
+  enabled: true
+  otlpEndpoint: http://tracelens-collector:8080/v1/traces
+
+guardloop:
+  enabled: false

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: agentmesh
+description: AgentMesh service mesh for AI agents
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

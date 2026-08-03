@@ -1,0 +1,101 @@
+syntax = "proto3";
+
+package agentmesh.v1;
+
+option go_package = "github.com/agentmesh/agentmesh/gen/agentmesh/v1;agentmeshv1";
+
+service AgentMesh {
+  rpc RegisterAgent(AgentRegistration) returns (RegistrationAck);
+  rpc DiscoverAgents(DiscoveryQuery) returns (stream AgentEndpoint);
+  rpc RouteRequest(RoutePayload) returns (RouteResponse);
+  rpc ReportHealth(HealthStatus) returns (HealthAck);
+  rpc GetCircuitState(CircuitQuery) returns (CircuitState);
+}
+
+message AgentRegistration {
+  string org_id = 1;
+  string agent_id = 2;
+  string agent_type = 3;
+  repeated string capabilities = 4;
+  string endpoint_url = 5;
+  HealthStatus health = 6;
+  CostProfile cost_profile = 7;
+  map<string, string> metadata = 8;
+}
+
+message CostProfile {
+  double cost_per_request_usd = 1;
+  double cost_per_1k_tokens_usd = 2;
+}
+
+message RegistrationAck {
+  string agent_id = 1;
+  int64 lease_ttl_seconds = 2;
+  string message = 3;
+}
+
+message DiscoveryQuery {
+  string org_id = 1;
+  string capability = 2;
+  double max_cost = 3;
+  string routing_strategy = 4;
+  int32 limit = 5;
+}
+
+message AgentEndpoint {
+  string agent_id = 1;
+  string agent_type = 2;
+  string endpoint_url = 3;
+  repeated string capabilities = 4;
+  double estimated_latency_ms = 5;
+  double success_rate = 6;
+  double cost_score = 7;
+  double rank_score = 8;
+  string org_id = 9;
+}
+
+message RoutePayload {
+  string org_id = 1;
+  string source_agent_id = 2;
+  string capability = 3;
+  string routing_strategy = 4;
+  repeated string fallback_agent_types = 5;
+  bytes payload_hint = 6;
+  map<string, string> headers = 7;
+}
+
+message RouteResponse {
+  string destination_agent_id = 1;
+  string destination_agent_type = 2;
+  string endpoint_url = 3;
+  map<string, string> injected_headers = 4;
+  repeated AgentEndpoint fallback_chain = 5;
+  int32 timeout_ms = 6;
+  int32 max_retries = 7;
+  string trace_context = 8;
+}
+
+message HealthStatus {
+  string agent_id = 1;
+  bool healthy = 2;
+  string message = 3;
+  int64 reported_at_unix = 4;
+}
+
+message HealthAck {
+  bool accepted = 1;
+}
+
+message CircuitQuery {
+  string org_id = 1;
+  string destination_agent_id = 2;
+}
+
+message CircuitState {
+  string state = 1;
+  int32 failure_count = 2;
+  int64 opened_at_unix = 3;
+  int64 half_open_at_unix = 4;
+  int32 threshold = 5;
+  int32 window_seconds = 6;
+}
