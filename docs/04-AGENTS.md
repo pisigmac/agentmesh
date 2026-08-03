@@ -39,6 +39,8 @@ Successful registration returns `lease_ttl_seconds`. Agents must refresh before 
 
 Query `GET /v1/agents/discover?capability=code_gen&routing_strategy=least-latency&max_cost=0.05`.
 
+To turn a user question into a call on a selected agent, see **[22-ROUTING-QUESTIONS.md](22-ROUTING-QUESTIONS.md)**.
+
 Streaming gRPC `DiscoverAgents` yields ranked `AgentEndpoint` messages with `rank_score`, `success_rate`, and `estimated_latency_ms`.
 
 ## Fallback chains

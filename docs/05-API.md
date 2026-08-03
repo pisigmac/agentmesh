@@ -41,6 +41,8 @@ Query parameters:
 
 ## POST /v1/route
 
+For a full walkthrough (capabilities → route → send the question to the agent), see **[22-ROUTING-QUESTIONS.md](22-ROUTING-QUESTIONS.md)**.
+
 **Body**: `RoutePayload`
 
 | Field | Description |

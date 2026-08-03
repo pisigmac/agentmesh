@@ -7,6 +7,7 @@ AgentMesh routes requests across registered coding agents using a Go 1.22 contro
 ## Quick links
 
 - [Features](docs/02-FEATURES.md) · [API](docs/05-API.md) · [OpenAPI](docs/openapi.yml)
+- [Routing questions to agents](docs/22-ROUTING-QUESTIONS.md)
 - [Architecture](docs/12-ARCHITECTURE.md) · [Deploy](docs/15-DEPLOY.md) · [Environment](docs/14-ENV.md)
 - [Operations runbooks](ops/01-PAYMENTS.md)
 
