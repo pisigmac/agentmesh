@@ -186,6 +186,26 @@ export async function getKeymintStatus(opts?: RequestOptions) {
   return request<KeymintStatus>("/v1/secrets/keymint", undefined, opts);
 }
 
+export type SecretAuditEvent = {
+  id: string;
+  action: string;
+  provider?: string;
+  provider_key_id?: string;
+  virtual_key_id?: string;
+  details?: Record<string, unknown>;
+  created_at: string;
+};
+
+export async function listSecretAudit(limit = 50, opts?: RequestOptions) {
+  const q = limit > 0 ? `?limit=${limit}` : "";
+  const data = await request<{ events: SecretAuditEvent[]; backend?: string }>(
+    `/v1/secrets/audit${q}`,
+    undefined,
+    opts,
+  );
+  return data.events ?? [];
+}
+
 export async function putProviderSecret(
   provider: string,
   body: { api_key?: string; base_url?: string; api_model?: string },

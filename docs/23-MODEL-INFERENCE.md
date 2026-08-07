@@ -33,6 +33,7 @@ See Keymint `docs/ENV.md` in the Keymint repo for vault/Postgres setup.
 | `GET` | `/v1/secrets/providers` | Which providers are configured (hints only) |
 | `PUT` | `/v1/secrets/providers/{provider}` | Save key → Keymint provider-key + virtual key |
 | `DELETE` | `/v1/secrets/providers/{provider}` | Remove Keymint key + binding |
+| `GET` | `/v1/secrets/audit` | Org-scoped Keymint key lifecycle events (operator+) |
 | `POST` | `/v1/chat` | Non-streaming inference via Keymint proxy |
 | `POST` | `/v1/chat/stream` | SSE streaming (`meta` → `token` → `done`) |
 

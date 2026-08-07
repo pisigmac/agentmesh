@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	agentmeshv1 "github.com/agentmesh/agentmesh/gen/agentmesh/v1"
@@ -103,6 +104,35 @@ func (g *Gateway) deleteSecret(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+func (g *Gateway) listSecretAudit(w http.ResponseWriter, r *http.Request) {
+	if g.keymint == nil || !g.keymint.Configured() {
+		writeJSON(w, http.StatusServiceUnavailable, errBody("KEYMINT_NOT_CONFIGURED",
+			"set KEYMINT_BASE_URL, KEYMINT_API_KEY, and KEYMINT_TEAM_ID"))
+		return
+	}
+	limit := 50
+	if v := r.URL.Query().Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			writeJSON(w, http.StatusBadRequest, errBody("INVALID_LIMIT", "limit must be a positive integer"))
+			return
+		}
+		limit = n
+	}
+	events, err := g.keymint.ListAudit(r.Context(), orgFromCtx(r), limit)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, errBody("AUDIT_FAILED", err.Error()))
+		return
+	}
+	if events == nil {
+		events = []keymint.AuditEvent{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"events":  events,
+		"backend": "keymint",
+	})
 }
 
 type chatBody struct {

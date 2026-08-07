@@ -78,6 +78,16 @@ Query params: `capability`, `routing_strategy`, `max_cost`, `limit`, `org_id`, `
 
 **Body**: `{ "agent_id", "healthy", "message?" }` — updates registry health for the authenticated org.
 
+## GET /v1/secrets/audit
+
+**Auth**: operator or admin. Proxies Keymint `GET /v1/audit-logs` and filters to the authenticated org’s provider-key / virtual-key bindings.
+
+**Query**: `limit` (default 50, max 100).
+
+**Response**: **200** `{ "events": [ { "id", "action", "provider", "provider_key_id", "virtual_key_id", "details", "created_at" } ], "backend": "keymint" }`. Never includes plaintext keys or virtual-key tokens. **503** if Keymint is not configured.
+
+See [23-MODEL-INFERENCE.md](23-MODEL-INFERENCE.md). Console: **Models & keys → Key lifecycle audit**.
+
 ## POST /v1/chat and POST /v1/chat/stream
 
 Inference via Keymint proxy. See [23-MODEL-INFERENCE.md](23-MODEL-INFERENCE.md). Stream uses SSE (`meta` / `token` / `done` / `error`).

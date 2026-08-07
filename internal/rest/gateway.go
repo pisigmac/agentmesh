@@ -79,6 +79,7 @@ func (g *Gateway) Routes() chi.Router {
 			protected.Put("/secrets/providers/{provider}", g.withRole(auth.RoleOperator, g.putSecret))
 			protected.Delete("/secrets/providers/{provider}", g.withRole(auth.RoleOperator, g.deleteSecret))
 			protected.Get("/secrets/keymint", g.withRole(auth.RoleViewer, g.keymintStatus))
+			protected.Get("/secrets/audit", g.withRole(auth.RoleOperator, g.listSecretAudit))
 			protected.Post("/chat", g.withRole(auth.RoleViewer, g.chat))
 			protected.Post("/chat/stream", g.withRole(auth.RoleViewer, g.chatStream))
 		})

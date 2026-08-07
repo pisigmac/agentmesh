@@ -157,6 +157,32 @@ func (c *Client) ProxyChatURL() string {
 	return c.baseURL + "/v1/proxy/chat/completions"
 }
 
+// AuditLog is a Keymint key-lifecycle event (no secrets).
+type AuditLog struct {
+	ID            string         `json:"id"`
+	VirtualKeyID  string         `json:"virtual_key_id"`
+	ProviderKeyID string         `json:"provider_key_id"`
+	Action        string         `json:"action"`
+	Details       map[string]any `json:"details"`
+	CreatedAt     string         `json:"created_at"`
+}
+
+// ListAuditLogs fetches Keymint audit logs. Keymint currently returns a fixed page;
+// limit/offset are reserved for forward compatibility and ignored by older servers.
+func (c *Client) ListAuditLogs(ctx context.Context, limit, offset int) ([]AuditLog, error) {
+	path := "/v1/audit-logs"
+	if limit > 0 || offset > 0 {
+		path = fmt.Sprintf("/v1/audit-logs?limit=%d&offset=%d", limit, offset)
+	}
+	var out struct {
+		AuditLogs []AuditLog `json:"audit_logs"`
+	}
+	if err := c.get(ctx, path, &out); err != nil {
+		return nil, err
+	}
+	return out.AuditLogs, nil
+}
+
 func (c *Client) get(ctx context.Context, path string, dest any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {

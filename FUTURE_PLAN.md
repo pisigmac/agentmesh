@@ -94,9 +94,9 @@ AgentMesh today provides:
 
 #### E3 — Secrets via Keymint — **done (Phase A)**
 
-**Shipped:** Provider keys maintained in **Keymint** (vault + `/provider-keys` + virtual keys). AgentMesh secrets REST is a facade; chat uses Keymint `POST /v1/proxy/chat/completions`. Virtual-key bindings encrypted in etcd with `AGENTMESH_SECRETS_KEY`. Audit/rotation delegated to Keymint.
+**Shipped:** Provider keys maintained in **Keymint** (vault + `/provider-keys` + virtual keys). AgentMesh secrets REST is a facade; chat uses Keymint `POST /v1/proxy/chat/completions`. Virtual-key bindings encrypted in etcd with `AGENTMESH_SECRETS_KEY`. Audit/rotation delegated to Keymint. Console **Models & keys** shows org-scoped Keymint lifecycle audit via `GET /v1/secrets/audit` (operator+).
 
-**Follow-ups:** surface Keymint audit in console; finer secrets-admin UX.
+**Follow-ups:** finer secrets-admin UX; Keymint compliance CSV export.
 
 #### E4 — First-class health and lease keepalive — **done (Phase A)**
 
@@ -249,7 +249,7 @@ Focus: demos that do not fall over; clear “required agent” story.
 | Order | Item | Outcome |
 |------:|------|---------|
 | 1 | E5 Native auth (JWT + org API keys) | **Shipped** — multi-tenant auth |
-| 2 | E3 follow-ups (Keymint audit UI) | Compliance-friendly ops |
+| 2 | E3 follow-ups (Keymint audit UI) | **Shipped** — org-scoped audit on Models |
 | 3 | E7 Policy SLOs | Cost/latency guardrails |
 | 4 | E9 Score-based path | Differentiated routing |
 | 5 | E11 Helm + metering slice | Deployable + billable |
@@ -355,7 +355,7 @@ E15–E20 as demand warrants; prefer customer pull over speculative build.
 ## 9. Immediate next actions
 
 1. Phase A core (pin, Keymint secrets, stream, health UX) is implemented; keep `21` / `22` / `23` current.
-2. Phase A complete (E1–E4, E8). Next: design-partner dry-run of `docs/21-MANUAL-TESTING.md`; Phase B follow-ups (Keymint audit UI, E7, E9, E11).
+2. Phase A complete; Keymint audit UI shipped. Next: design-partner dry-run of `docs/21-MANUAL-TESTING.md`; Phase B remainder (E7, E9, E11).
 3. Run design-partner demo script from updated `21-MANUAL-TESTING.md`.
 4. Revisit positioning website copy: **mesh first**, inference second.
 

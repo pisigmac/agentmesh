@@ -422,12 +422,13 @@ Copy and mark pass/fail:
 [ ] GET /v1/circuit/{agent_id}
 [ ] GET/PUT /v1/policy
 [ ] PUT /v1/secrets/providers/{provider} → Keymint; GET list shows configured
+[ ] GET /v1/secrets/audit → org-scoped Keymint lifecycle events (operator+)
 [ ] POST /v1/chat and POST /v1/chat/stream (SSE meta/token/done)
 [ ] UI Settings: Keymint connected
 [ ] UI Agents: healthy/unhealthy + persistent/leased badges
 [ ] UI Route debugger pin controls
 [ ] UI Chat stream + Cancel + pin
-[ ] UI Models: Configured in Keymint
+[ ] UI Models: Configured in Keymint + Key lifecycle audit table
 [ ] UI Circuits / Policy / Landing ↔ console
 [ ] make test && frontend npm run build
 [ ] stop-all (or stop-local)

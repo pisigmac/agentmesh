@@ -150,3 +150,77 @@ func (f *Facade) Delete(ctx context.Context, orgID, provider string) error {
 func (f *Facade) GetBinding(ctx context.Context, orgID, provider string) (Binding, error) {
 	return f.Binds.Get(ctx, orgID, provider)
 }
+
+// AuditEvent is an org-scoped Keymint lifecycle event for the console.
+type AuditEvent struct {
+	ID            string         `json:"id"`
+	Action        string         `json:"action"`
+	Provider      string         `json:"provider,omitempty"`
+	ProviderKeyID string         `json:"provider_key_id,omitempty"`
+	VirtualKeyID  string         `json:"virtual_key_id,omitempty"`
+	Details       map[string]any `json:"details,omitempty"`
+	CreatedAt     string         `json:"created_at"`
+}
+
+// FilterAuditForBindings keeps Keymint logs that match org bindings and attaches provider labels.
+func FilterAuditForBindings(logs []AuditLog, binds []Binding, limit int) []AuditEvent {
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	byPK := map[string]string{}
+	byVK := map[string]string{}
+	for _, b := range binds {
+		if b.ProviderKeyID != "" {
+			byPK[b.ProviderKeyID] = b.Provider
+		}
+		if b.VirtualKeyID != "" {
+			byVK[b.VirtualKeyID] = b.Provider
+		}
+	}
+	var out []AuditEvent
+	for _, log := range logs {
+		provider := ""
+		if p, ok := byPK[log.ProviderKeyID]; ok {
+			provider = p
+		} else if p, ok := byVK[log.VirtualKeyID]; ok {
+			provider = p
+		} else {
+			continue
+		}
+		out = append(out, AuditEvent{
+			ID:            log.ID,
+			Action:        log.Action,
+			Provider:      provider,
+			ProviderKeyID: log.ProviderKeyID,
+			VirtualKeyID:  log.VirtualKeyID,
+			Details:       log.Details,
+			CreatedAt:     log.CreatedAt,
+		})
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out
+}
+
+// ListAudit returns org-scoped Keymint audit events (no tokens/plaintext).
+func (f *Facade) ListAudit(ctx context.Context, orgID string, limit int) ([]AuditEvent, error) {
+	if !f.Configured() {
+		return nil, fmt.Errorf("keymint not configured")
+	}
+	if orgID == "" {
+		return nil, fmt.Errorf("org_id required")
+	}
+	binds, err := f.Binds.List(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	logs, err := f.Client.ListAuditLogs(ctx, 100, 0)
+	if err != nil {
+		return nil, err
+	}
+	return FilterAuditForBindings(logs, binds, limit), nil
+}
