@@ -25,7 +25,8 @@ Configuration is loaded from environment variables in `internal/config/config.go
 | `DATAPLANE_HTTP_PORT` | `8081` | HTTP listen port |
 | `CONTROL_PLANE_ADDR` | `localhost:49090` | gRPC upstream (host; use `control-plane:9090` inside compose) |
 | `DATAPLANE_PROXY_TIMEOUT_MS` | `30000` | Upstream proxy timeout |
-| `DATAPLANE_MAX_RETRIES` | `2` | Retry count |
+| `DATAPLANE_MAX_RETRIES` | `2` | Max retries after first attempt (`attempts = max_retries + 1`) |
+| `DATAPLANE_FAILOVER` | `true` | On upstream 5xx/timeout, walk `fallback_chain` (records circuit failures per destination) |
 | `DATAPLANE_ROUTE_CACHE_TTL_MS` | `500` | Route decision cache TTL |
 
 ## etcd

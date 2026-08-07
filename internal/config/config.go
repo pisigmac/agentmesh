@@ -35,6 +35,7 @@ type DataPlaneConfig struct {
 	ControlPlane  string
 	ProxyTimeout  time.Duration
 	MaxRetries    int
+	Failover      bool
 	RouteCacheTTL time.Duration
 }
 
@@ -114,6 +115,7 @@ func Load() Config {
 			ControlPlane:  getenv("CONTROL_PLANE_ADDR", "localhost:9090"),
 			ProxyTimeout:  time.Duration(getenvInt("DATAPLANE_PROXY_TIMEOUT_MS", 30000)) * time.Millisecond,
 			MaxRetries:    getenvInt("DATAPLANE_MAX_RETRIES", 2),
+			Failover:      getenvBool("DATAPLANE_FAILOVER", true),
 			RouteCacheTTL: time.Duration(getenvInt("DATAPLANE_ROUTE_CACHE_TTL_MS", 500)) * time.Millisecond,
 		},
 		Etcd: EtcdConfig{

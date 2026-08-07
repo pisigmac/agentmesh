@@ -149,16 +149,7 @@ AgentMesh today provides:
 
 #### E8 — Data plane failover that uses fallback_chain
 
-**Problem:** Fallback chain is advisory; proxy may not walk it on failure.
-
-**Plan:**
-
-- On upstream 5xx/timeout, try next `fallback_chain` entry within `max_retries`
-- Record circuit failures per destination
-- Config: `DATAPLANE_FAILOVER=true`
-- Integration test: primary down → secondary succeeds
-
-**Acceptance:** Documented failover path; chaos test in `tests/chaos`.
+**Shipped:** `POST /v1/proxy/*` walks primary + `fallback_chain` on upstream 5xx/timeout when `DATAPLANE_FAILOVER=true` (default). Attempts capped by `DATAPLANE_MAX_RETRIES` (or route `max_retries`). Failures/successes recorded on the Redis circuit breaker per destination; open circuits are skipped. Response headers `X-Agentmesh-Failover-Attempts` / `X-Agentmesh-Destination` set when more than one attempt was needed. Chaos test: `tests/chaos/failover_test.go`.
 
 #### E9 — Score-based routing production path
 
@@ -249,9 +240,9 @@ Focus: demos that do not fall over; clear “required agent” story.
 | 2 | E3 Keymint secrets | **Shipped** — vault + proxy |
 | 3 | E2 Streaming chat | **Shipped** — SSE console inference |
 | 4 | E4 Health / keepalive UX | **Shipped** — honest agent liveness |
-| 5 | E8 Dataplane failover (MVP) | Retries next in chain (remaining) |
+| 5 | E8 Dataplane failover (MVP) | **Shipped** — walk `fallback_chain` on 5xx/timeout |
 
-**Exit criteria:** Design partner can pin an agent, stream chat with Keymint-backed keys, and see agents go stale when keepalive dies. (E8 still open.)
+**Exit criteria:** Design partner can pin an agent, stream chat with Keymint-backed keys, see agents go stale when keepalive dies, and proxy failover hits the next chain entry.
 
 ### Phase B — Platform hardening (≈ 6–8 weeks)
 
@@ -364,7 +355,7 @@ E15–E20 as demand warrants; prefer customer pull over speculative build.
 ## 9. Immediate next actions
 
 1. Phase A core (pin, Keymint secrets, stream, health UX) is implemented; keep `21` / `22` / `23` current.
-2. Next Phase A remainder: dataplane failover MVP (E8).
+2. Phase A complete (E1–E4, E8). Next: design-partner dry-run of `docs/21-MANUAL-TESTING.md`; Phase B follow-ups (Keymint audit UI, E7, E9, E11).
 3. Run design-partner demo script from updated `21-MANUAL-TESTING.md`.
 4. Revisit positioning website copy: **mesh first**, inference second.
 

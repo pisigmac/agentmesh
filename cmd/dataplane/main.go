@@ -1,14 +1,11 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/httputil"
-	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -17,9 +14,12 @@ import (
 
 	agentmeshv1 "github.com/agentmesh/agentmesh/gen/agentmesh/v1"
 	"github.com/agentmesh/agentmesh/internal/analytics"
+	"github.com/agentmesh/agentmesh/internal/circuit"
 	"github.com/agentmesh/agentmesh/internal/config"
+	"github.com/agentmesh/agentmesh/internal/dataplane"
 	"github.com/agentmesh/agentmesh/internal/telemetry"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -43,6 +43,25 @@ func main() {
 		defer ch.Close()
 	}
 
+	var circ dataplane.CircuitRecorder = dataplane.NoopCircuit{}
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     cfg.Redis.Addr,
+		Password: cfg.Redis.Password,
+		DB:       cfg.Redis.DB,
+	})
+	if err := rdb.Ping(ctx).Err(); err != nil {
+		log.Warn("redis ping failed, dataplane circuit recording disabled", zap.Error(err))
+		_ = rdb.Close()
+	} else {
+		br := circuit.New(rdb, "agentmesh", circuit.Config{
+			FailureThreshold: cfg.Circuit.FailureThreshold,
+			WindowSeconds:    cfg.Circuit.WindowSeconds,
+			HalfOpenSeconds:  cfg.Circuit.HalfOpenSeconds,
+		})
+		circ = dataplane.BreakerAdapter{B: br}
+		defer rdb.Close()
+	}
+
 	conn, err := grpc.Dial(cfg.DataPlane.ControlPlane, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Fatal("dial control plane", zap.Error(err))
@@ -56,20 +75,23 @@ func main() {
 	})
 	mux.Handle("/metrics", promhttp.Handler())
 
-	// Advisory routing
 	mux.HandleFunc("/v1/route", func(w http.ResponseWriter, r *http.Request) {
-		handleAdvisory(w, r, cp, cfg, ch, false)
+		handleAdvisory(w, r, cp, ch)
 	})
 
-	// Full proxy: POST /v1/proxy/route then forwards to chosen endpoint
 	mux.HandleFunc("/v1/proxy/", func(w http.ResponseWriter, r *http.Request) {
-		handleProxy(w, r, cp, cfg, ch)
+		handleProxy(w, r, cp, cfg, ch, circ, log)
 	})
 
 	addr := fmt.Sprintf(":%d", cfg.DataPlane.HTTPPort)
 	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
-		log.Info("dataplane listening", zap.String("addr", addr), zap.String("mode", cfg.DataPlane.Mode))
+		log.Info("dataplane listening",
+			zap.String("addr", addr),
+			zap.String("mode", cfg.DataPlane.Mode),
+			zap.Bool("failover", cfg.DataPlane.Failover),
+			zap.Int("max_retries", cfg.DataPlane.MaxRetries),
+		)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatal("serve", zap.Error(err))
 		}
@@ -83,7 +105,7 @@ func main() {
 	_ = srv.Shutdown(shCtx)
 }
 
-func handleAdvisory(w http.ResponseWriter, r *http.Request, cp agentmeshv1.AgentMeshClient, cfg config.Config, ch *analytics.Store, proxy bool) {
+func handleAdvisory(w http.ResponseWriter, r *http.Request, cp agentmeshv1.AgentMeshClient, ch *analytics.Store) {
 	start := time.Now()
 	org := headerOrg(r)
 	var payload agentmeshv1.RoutePayload
@@ -107,18 +129,10 @@ func handleAdvisory(w http.ResponseWriter, r *http.Request, cp agentmeshv1.Agent
 	recordCH(ch, org, resp, payload, time.Since(start), true, 0)
 
 	w.Header().Set("Content-Type", "application/json")
-	if proxy {
-		target, _ := url.Parse(resp.EndpointUrl)
-		for k, v := range resp.InjectedHeaders {
-			r.Header.Set(k, v)
-		}
-		proxyTo(w, r, target, cfg)
-		return
-	}
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-func handleProxy(w http.ResponseWriter, r *http.Request, cp agentmeshv1.AgentMeshClient, cfg config.Config, ch *analytics.Store) {
+func handleProxy(w http.ResponseWriter, r *http.Request, cp agentmeshv1.AgentMeshClient, cfg config.Config, ch *analytics.Store, circ dataplane.CircuitRecorder, log *zap.Logger) {
 	start := time.Now()
 	org := headerOrg(r)
 	var payload agentmeshv1.RoutePayload
@@ -136,67 +150,70 @@ func handleProxy(w http.ResponseWriter, r *http.Request, cp agentmeshv1.AgentMes
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	target, err := url.Parse(resp.EndpointUrl)
+
+	candidates := dataplane.CandidatesFromRoute(resp)
+	pathSuffix := strings.TrimPrefix(r.URL.Path, "/v1/proxy")
+	maxRetries := cfg.DataPlane.MaxRetries
+	if resp.GetMaxRetries() > 0 {
+		maxRetries = int(resp.GetMaxRetries())
+	}
+
+	result, err := dataplane.ProxyWithFailover(ctx, r.Method, body, r.Header.Get("Content-Type"), candidates, dataplane.ProxyConfig{
+		Timeout:    cfg.DataPlane.ProxyTimeout,
+		MaxRetries: maxRetries,
+		Failover:   cfg.DataPlane.Failover,
+		PathSuffix: pathSuffix,
+		Headers:    resp.GetInjectedHeaders(),
+		OrgID:      org,
+		Circuit:    circ,
+	})
 	if err != nil {
-		http.Error(w, "bad endpoint", http.StatusBadGateway)
+		telemetry.ObserveRoute(org, "proxy", "error", time.Since(start))
+		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	pathSuffix := strings.TrimPrefix(r.URL.Path, "/v1/proxy")
-	target.Path = strings.TrimSuffix(target.Path, "/") + pathSuffix
-	r.Body = io.NopCloser(bytes.NewReader(body))
-	for k, v := range resp.InjectedHeaders {
-		r.Header.Set(k, v)
+
+	retries := uint8(0)
+	if result.Attempts > 0 {
+		retries = uint8(result.Attempts - 1)
 	}
-	var retries uint8
-	for attempt := 0; attempt <= cfg.DataPlane.MaxRetries; attempt++ {
-		retries = uint8(attempt)
-		rec := httptestRecorder{header: make(http.Header)}
-		proxyTo(&rec, r, target, cfg)
-		if rec.status < 500 {
-			for k, vals := range rec.header {
-				for _, v := range vals {
-					w.Header().Add(k, v)
-				}
+	ok := result.Status > 0 && result.Status < 400
+	if result.Status >= 500 || result.Status == 0 {
+		telemetry.ObserveRoute(org, "proxy", "error", time.Since(start))
+		recordCH(ch, org, resp, payload, time.Since(start), false, retries)
+		log.Warn("proxy upstream failed",
+			zap.String("org", org),
+			zap.Strings("failed_agents", result.FailedAgents),
+			zap.Int("attempts", result.Attempts),
+			zap.Bool("failover", cfg.DataPlane.Failover),
+		)
+		for k, vals := range result.Header {
+			for _, v := range vals {
+				w.Header().Add(k, v)
 			}
-			w.WriteHeader(rec.status)
-			_, _ = w.Write(rec.body)
-			telemetry.ObserveRoute(org, "proxy", "ok", time.Since(start))
-			recordCH(ch, org, resp, payload, time.Since(start), rec.status < 400, retries)
-			return
+		}
+		w.WriteHeader(result.Status)
+		_, _ = w.Write(result.Body)
+		return
+	}
+
+	// Prefer actual upstream destination after failover for analytics.
+	if result.DestinationID != "" {
+		resp.DestinationAgentId = result.DestinationID
+	}
+	for k, vals := range result.Header {
+		for _, v := range vals {
+			w.Header().Add(k, v)
 		}
 	}
-	telemetry.ObserveRoute(org, "proxy", "error", time.Since(start))
-	recordCH(ch, org, resp, payload, time.Since(start), false, retries)
-	http.Error(w, "upstream failed after retries", http.StatusBadGateway)
-}
-
-type httptestRecorder struct {
-	status int
-	body   []byte
-	header http.Header
-}
-
-func (r *httptestRecorder) Header() http.Header { return r.header }
-func (r *httptestRecorder) Write(b []byte) (int, error) {
-	r.body = append(r.body, b...)
-	if r.status == 0 {
-		r.status = 200
+	if result.Attempts > 1 {
+		w.Header().Set("X-Agentmesh-Failover-Attempts", fmt.Sprintf("%d", result.Attempts))
+		w.Header().Set("X-Agentmesh-Destination", result.DestinationID)
 	}
-	return len(b), nil
-}
-func (r *httptestRecorder) WriteHeader(statusCode int) { r.status = statusCode }
-
-func proxyTo(w http.ResponseWriter, r *http.Request, target *url.URL, cfg config.Config) {
-	proxy := httputil.NewSingleHostReverseProxy(target)
-	proxy.Transport = &http.Transport{
-		MaxIdleConns:        100,
-		IdleConnTimeout:     90 * time.Second,
-		ResponseHeaderTimeout: cfg.DataPlane.ProxyTimeout,
-	}
-	r.URL.Host = target.Host
-	r.URL.Scheme = target.Scheme
-	r.Host = target.Host
-	proxy.ServeHTTP(w, r)
+	w.WriteHeader(result.Status)
+	_, _ = w.Write(result.Body)
+	telemetry.ObserveRoute(org, "proxy", "ok", time.Since(start))
+	recordCH(ch, org, resp, payload, time.Since(start), ok, retries)
 }
 
 func headerOrg(r *http.Request) string {

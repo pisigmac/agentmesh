@@ -311,11 +311,23 @@ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:48081/health
 
 **Expected:** `200`.
 
-Full proxy behavior depends on destination endpoints (seed uses `127.0.0.1:999x` — not real agents). Manual proxy test is optional; confirm dataplane process logs show no crash loops:
+### 7.1 Failover (E8)
+
+With `DATAPLANE_FAILOVER=true` (default), `POST /v1/proxy/*` walks `fallback_chain` on upstream 5xx/timeout (within `DATAPLANE_MAX_RETRIES`). Circuit failures are recorded per destination in Redis.
+
+Automated chaos check:
+
+```bash
+go test ./tests/chaos/ ./internal/dataplane/ -count=1 -v
+```
+
+Full live proxy still needs real agent endpoints (seed uses `127.0.0.1:999x`). Confirm dataplane logs show no crash loops:
 
 ```bash
 ./scripts/logs-all.sh dataplane
 ```
+
+On a successful failover, response includes `X-Agentmesh-Failover-Attempts` and `X-Agentmesh-Destination`.
 
 ---
 

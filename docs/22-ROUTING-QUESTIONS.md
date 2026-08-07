@@ -245,7 +245,7 @@ curl -s -X POST "${CP}/v1/route" "${HDR[@]}" \
 - Call `endpoint_url` (or proxy via data plane) with your question JSON.
 - Propagate `injected_headers` for tracing and support.
 - Honor `timeout_ms` / `max_retries` in your client.
-- `fallback_chain` lists ranked alternatives if you implement client-side failover.
+- `fallback_chain` lists ranked alternatives; the data plane walks it on 5xx/timeout when `DATAPLANE_FAILOVER=true` (clients may still implement their own failover).
 
 ### Selection algorithm (control plane)
 
