@@ -78,15 +78,25 @@ Console uses Bearer JWT after login. Machines use Bearer org API keys (`amk_…`
 
 `PUT /v1/secrets/providers/{id}` creates a Keymint provider-key + virtual key; chat uses Keymint `POST /v1/proxy/chat/completions`. Catalog: [`deploy/models.yaml`](../deploy/models.yaml). See [23-MODEL-INFERENCE.md](23-MODEL-INFERENCE.md).
 
+## Score-based routing
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SCORE_PROVIDER` | `auto` | `auto` \| `noop` \| `fixture` \| `guardloop`. `auto` → GuardLoop when enabled, else deterministic **fixture** (demos/CI) |
+
+When `routing_strategy=score-based`, the control plane blends provider score with success/latency/cost. If the provider returns an error, ranking **falls back to least-latency**. Contributions appear on `POST /v1/route` as `score` and headers `x-agentmesh-score-*`.
+
 ## GuardLoop (optional)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GUARDLOOP_ENABLED` | `false` | Enable score provider |
-| `GUARDLOOP_BASE_URL` | `` | API base |
-| `GUARDLOOP_API_KEY` | `` | API key |
-| `GUARDLOOP_TIMEOUT_MS` | `5000` | Request timeout |
-| `GUARDLOOP_CACHE_TTL_SEC` | `60` | Score cache TTL |
+| `GUARDLOOP_ENABLED` | `false` | Prefer GuardLoop when `SCORE_PROVIDER=auto` |
+| `GUARDLOOP_BASE_URL` | `` | API base (`GET {base}/scores?limit=100`) |
+| `GUARDLOOP_API_KEY` | `` | Bearer token |
+| `GUARDLOOP_TIMEOUT_MS` | `5000` | HTTP client timeout (failed fetch → least-latency fallback) |
+| `GUARDLOOP_CACHE_TTL_SEC` | `60` | In-process score cache TTL per agent type |
+
+Staging: set `GUARDLOOP_ENABLED=true`, `SCORE_PROVIDER=guardloop` (or `auto`), and sandbox URL/key. See [ops/08-STAGING.md](../ops/08-STAGING.md).
 
 ## TraceLens
 

@@ -20,6 +20,7 @@ type Config struct {
 	Keymint      KeymintConfig
 	Models       ModelsConfig
 	GuardLoop    GuardLoopConfig
+	Score        ScoreProviderConfig
 	TraceLens    TraceLensConfig
 	Circuit      CircuitConfig
 }
@@ -88,6 +89,11 @@ type GuardLoopConfig struct {
 	APIKey   string
 	Timeout  time.Duration
 	CacheTTL time.Duration
+}
+
+// ScoreProvider selects the score-based routing backend: auto|noop|fixture|guardloop.
+type ScoreProviderConfig struct {
+	Provider string
 }
 
 type TraceLensConfig struct {
@@ -159,6 +165,9 @@ func Load() Config {
 			APIKey:   getenv("GUARDLOOP_API_KEY", ""),
 			Timeout:  time.Duration(getenvInt("GUARDLOOP_TIMEOUT_MS", 5000)) * time.Millisecond,
 			CacheTTL: time.Duration(getenvInt("GUARDLOOP_CACHE_TTL_SEC", 60)) * time.Second,
+		},
+		Score: ScoreProviderConfig{
+			Provider: getenv("SCORE_PROVIDER", "auto"),
 		},
 		TraceLens: TraceLensConfig{
 			Enabled:  getenvBool("TRACELENS_ENABLED", true),

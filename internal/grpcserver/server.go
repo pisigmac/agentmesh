@@ -219,6 +219,7 @@ func (s *Server) RouteRequest(ctx context.Context, req *agentmeshv1.RoutePayload
 		}
 	}
 
+	var rankMeta router.RankMeta
 	if !pinned {
 		var stats router.FilterStats
 		ranked = s.engine.Rank(router.RankInput{
@@ -231,6 +232,7 @@ func (s *Server) RouteRequest(ctx context.Context, req *agentmeshv1.RoutePayload
 			Strategy:     router.Strategy(strategy),
 			Agents:       agents,
 			Stats:        &stats,
+			Meta:         &rankMeta,
 		})
 		ranked = router.FilterByFallbackTypes(ranked, req.GetFallbackAgentTypes())
 		ranked = router.PreferAgentIDs(ranked, req.GetPreferAgentIds())
@@ -270,6 +272,17 @@ func (s *Server) RouteRequest(ctx context.Context, req *agentmeshv1.RoutePayload
 	}
 	if pinned {
 		headers["x-agentmesh-pin"] = "true"
+	}
+	if strategy == string(router.StrategyScoreBased) || rankMeta.StrategyUsed == string(router.StrategyScoreBased) {
+		if rankMeta.Provider != "" {
+			headers["x-agentmesh-score-provider"] = rankMeta.Provider
+		}
+		if rankMeta.Fallback != "" {
+			headers["x-agentmesh-score-fallback"] = rankMeta.Fallback
+		}
+		if detail := router.FormatScoreHeader(rankMeta); detail != "" {
+			headers["x-agentmesh-score-detail"] = detail
+		}
 	}
 	for k, v := range req.GetHeaders() {
 		headers[k] = v

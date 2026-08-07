@@ -12,6 +12,6 @@ go test ./tests/chaos/ ./internal/dataplane/ -count=1
 
 - etcd partition: block port 2379, verify register fails gracefully
 - Redis slow: inject latency, circuit breaker still persists state
-- GuardLoop timeout: score_based falls back to latency/cost ranking
+- GuardLoop timeout / bad URL: `score-based` sets `x-agentmesh-score-fallback=least-latency` (covered in `internal/router` unit tests with `ErrProvider`)
 
 Run manually in staging per ops/staging.md.

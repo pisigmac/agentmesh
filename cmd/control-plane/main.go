@@ -23,6 +23,7 @@ import (
 	"github.com/agentmesh/agentmesh/internal/registry"
 	"github.com/agentmesh/agentmesh/internal/rest"
 	"github.com/agentmesh/agentmesh/internal/router"
+	"github.com/agentmesh/agentmesh/internal/score"
 	"github.com/agentmesh/agentmesh/internal/score/guardloop"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
@@ -52,7 +53,19 @@ func main() {
 	}
 
 	gl := guardloop.NewClient(cfg.GuardLoop)
-	engine := router.NewEngine(guardloop.ScoreBridge{Client: gl})
+	scoreName := score.ResolveProviderName(cfg.Score.Provider, gl.Enabled())
+	var scoreProvider score.Provider
+	switch scoreName {
+	case "guardloop":
+		scoreProvider = gl
+	case "noop":
+		scoreProvider = score.Noop{}
+	default:
+		scoreProvider = score.Fixture{}
+		scoreName = "fixture"
+	}
+	log.Info("score provider", zap.String("provider", scoreName), zap.Bool("guardloop_enabled", gl.Enabled()))
+	engine := router.NewEngine(scoreProvider)
 	br := circuit.New(rdb, "agentmesh", circuit.Config{
 		FailureThreshold: cfg.Circuit.FailureThreshold,
 		WindowSeconds:    cfg.Circuit.WindowSeconds,

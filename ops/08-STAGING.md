@@ -44,9 +44,13 @@ Refresh weekly from anonymized fixture scripts.
 
 Enable experimental flags here first (`FF_EVENTS_WEBHOOKS`, etc.).
 
-## GuardLoop
+## GuardLoop / score-based routing
 
-Set `guardloop.enabled: true` in Helm values with sandbox base URL.
+1. Set `GUARDLOOP_ENABLED=true`, `GUARDLOOP_BASE_URL`, `GUARDLOOP_API_KEY` (sandbox).
+2. Leave `SCORE_PROVIDER=auto` (or set `guardloop` explicitly). Without GuardLoop, staging still uses the **fixture** provider so `score-based` demos work offline.
+3. Verify: `POST /v1/route` with `"routing_strategy":"score-based"` returns `score.provider` (`guardloop` or `fixture`) and `x-agentmesh-score-detail` in injected headers.
+4. Chaos: stop GuardLoop or set a bad URL — response should include `score.fallback=least-latency` (see [tests/chaos/README.md](../tests/chaos/README.md)).
+5. Helm: `guardloop.enabled: true` in values with sandbox base URL.
 
 ## Auth testing
 

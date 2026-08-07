@@ -1,13 +1,4 @@
 package guardloop
 
-import "context"
-
-func (c *Client) ScoreCtx(ctx context.Context, agentType string) float64 {
-	return c.Score(ctx, agentType)
-}
-
+// ScoreBridge is kept for backward-compatible wiring; Client already implements score.Provider.
 type ScoreBridge struct{ *Client }
-
-func (b ScoreBridge) Score(ctx context.Context, agentType string) float64 {
-	return b.Client.Score(ctx, agentType)
-}

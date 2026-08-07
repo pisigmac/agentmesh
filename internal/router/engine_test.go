@@ -4,10 +4,11 @@ import (
 	"testing"
 
 	"github.com/agentmesh/agentmesh/internal/registry"
+	"github.com/agentmesh/agentmesh/internal/score"
 )
 
 func TestRankLeastLatency(t *testing.T) {
-	e := NewEngine(NoopScoreProvider{})
+	e := NewEngine(score.Noop{})
 	ranked := e.Rank(RankInput{
 		OrgID:      "default",
 		Capability: "code_gen",
@@ -46,7 +47,7 @@ func TestFindAgent(t *testing.T) {
 }
 
 func TestRankFiltersMaxCostAndLatency(t *testing.T) {
-	e := NewEngine(NoopScoreProvider{})
+	e := NewEngine(score.Noop{})
 	var stats FilterStats
 	ranked := e.Rank(RankInput{
 		Capability:   "code_gen",
@@ -65,6 +66,46 @@ func TestRankFiltersMaxCostAndLatency(t *testing.T) {
 	}
 	if stats.RejectedCost != 1 || stats.RejectedLatency != 1 {
 		t.Fatalf("stats=%+v", stats)
+	}
+}
+
+func TestScoreBasedFixtureOrdersByProviderScore(t *testing.T) {
+	e := NewEngine(score.Fixture{})
+	var meta RankMeta
+	ranked := e.Rank(RankInput{
+		Capability: "code_gen",
+		Strategy:   StrategyScoreBased,
+		Meta:       &meta,
+		Agents: []registry.AgentRecord{
+			{AgentID: "copilot", AgentType: "github_copilot", Healthy: true, Capabilities: []string{"code_gen"}, SuccessRate: 0.9, LatencyEWMA: 80},
+			{AgentID: "claude", AgentType: "claude_code", Healthy: true, Capabilities: []string{"code_gen"}, SuccessRate: 0.9, LatencyEWMA: 80},
+		},
+	})
+	if len(ranked) < 2 || ranked[0].Agent.AgentID != "claude" {
+		t.Fatalf("want claude first (higher fixture score), got %+v", ranked)
+	}
+	if meta.Provider != "fixture" || meta.Fallback != "" || len(meta.Contributions) != 2 {
+		t.Fatalf("meta=%+v", meta)
+	}
+}
+
+func TestScoreBasedFallsBackToLeastLatency(t *testing.T) {
+	e := NewEngine(score.ErrProvider{Msg: "boom"})
+	var meta RankMeta
+	ranked := e.Rank(RankInput{
+		Capability: "code_gen",
+		Strategy:   StrategyScoreBased,
+		Meta:       &meta,
+		Agents: []registry.AgentRecord{
+			{AgentID: "slow", AgentType: "cursor", Healthy: true, Capabilities: []string{"code_gen"}, LatencyEWMA: 200},
+			{AgentID: "fast", AgentType: "cursor", Healthy: true, Capabilities: []string{"code_gen"}, LatencyEWMA: 40},
+		},
+	})
+	if len(ranked) < 1 || ranked[0].Agent.AgentID != "fast" {
+		t.Fatalf("fallback least-latency want fast, got %+v", ranked)
+	}
+	if meta.Fallback != string(StrategyLeastLatency) {
+		t.Fatalf("meta=%+v", meta)
 	}
 }
 

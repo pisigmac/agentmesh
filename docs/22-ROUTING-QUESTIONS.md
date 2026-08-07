@@ -194,7 +194,7 @@ This is the core control-plane call. It returns **where** to send the next reque
 | `least-latency` | Prefer lowest estimated latency |
 | `least-cost` | Prefer lowest cost profile |
 | `round-robin` | Rotate among matching candidates |
-| `score-based` | Blend GuardLoop score (if enabled) with success / latency / cost |
+| `score-based` | Blend score provider (`fixture` by default, or GuardLoop) with success / latency / cost; falls back to least-latency on provider error |
 
 If `routing_strategy` is omitted, org policy `routing.default_strategy` is used ([org policy example](../deploy/examples/org-policy-default.json)).
 

@@ -99,6 +99,12 @@ export type RoutePayload = {
   pin_failover?: boolean;
 };
 
+export type RouteScoreInfo = {
+  provider?: string;
+  fallback?: string;
+  detail?: string;
+};
+
 export type RouteResponse = {
   destination_agent_id?: string;
   destination_agent_type?: string;
@@ -107,6 +113,7 @@ export type RouteResponse = {
   timeout_ms?: number;
   max_retries?: number;
   trace_context?: string;
+  score?: RouteScoreInfo;
 };
 
 export async function routeRequest(payload: RoutePayload, opts?: RequestOptions) {

@@ -131,6 +131,33 @@ export default function RoutesPage() {
           <p style={{ fontSize: "0.8125rem", color: "var(--ink-muted)" }}>
             Trace: {result.trace_context} · Timeout {result.timeout_ms}ms · Retries {result.max_retries}
           </p>
+          {(result.score || result.injected_headers?.["x-agentmesh-score-provider"]) && (
+            <div style={{ marginTop: "0.75rem", padding: "0.75rem", background: "var(--surface-2, #f4f4f5)", borderRadius: "6px" }}>
+              <h3 style={{ margin: "0 0 0.35rem", fontSize: "0.9rem" }}>Score contribution</h3>
+              <p style={{ margin: 0, fontSize: "0.8125rem" }}>
+                Provider{" "}
+                <span className="mono">
+                  {result.score?.provider || result.injected_headers?.["x-agentmesh-score-provider"]}
+                </span>
+                {(result.score?.fallback || result.injected_headers?.["x-agentmesh-score-fallback"]) && (
+                  <>
+                    {" "}
+                    · Fallback{" "}
+                    <span className="badge badge-warn">
+                      {result.score?.fallback || result.injected_headers?.["x-agentmesh-score-fallback"]}
+                    </span>
+                  </>
+                )}
+              </p>
+              <p className="mono" style={{ margin: "0.35rem 0 0", fontSize: "0.75rem", wordBreak: "break-all" }}>
+                {result.score?.detail || result.injected_headers?.["x-agentmesh-score-detail"] || "—"}
+              </p>
+              <p style={{ margin: "0.5rem 0 0", fontSize: "0.75rem", color: "var(--ink-muted)" }}>
+                Format: <span className="mono">agent*:p=provider_score,c=composite</span> (* = selected). Use strategy{" "}
+                <span className="mono">score-based</span>.
+              </p>
+            </div>
+          )}
           <pre className="mono" style={{ margin: "1rem 0 0", overflow: "auto", fontSize: "0.75rem" }}>
             {JSON.stringify(result, null, 2)}
           </pre>

@@ -302,7 +302,29 @@ func (g *Gateway) route(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, errBody("ROUTE_FAILED", err.Error()))
 		return
 	}
-	writeJSON(w, http.StatusOK, resp)
+	out := map[string]any{
+		"destination_agent_id":   resp.GetDestinationAgentId(),
+		"destination_agent_type": resp.GetDestinationAgentType(),
+		"endpoint_url":           resp.GetEndpointUrl(),
+		"injected_headers":       resp.GetInjectedHeaders(),
+		"fallback_chain":         resp.GetFallbackChain(),
+		"timeout_ms":             resp.GetTimeoutMs(),
+		"max_retries":            resp.GetMaxRetries(),
+		"trace_context":          resp.GetTraceContext(),
+	}
+	if hdr := resp.GetInjectedHeaders(); hdr != nil {
+		if p := hdr["x-agentmesh-score-provider"]; p != "" {
+			score := map[string]any{"provider": p}
+			if fb := hdr["x-agentmesh-score-fallback"]; fb != "" {
+				score["fallback"] = fb
+			}
+			if d := hdr["x-agentmesh-score-detail"]; d != "" {
+				score["detail"] = d
+			}
+			out["score"] = score
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (g *Gateway) circuitState(w http.ResponseWriter, r *http.Request) {

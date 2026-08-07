@@ -429,7 +429,8 @@ Copy and mark pass/fail:
 [ ] POST /v1/chat and POST /v1/chat/stream (SSE meta/token/done)
 [ ] UI Settings: Keymint connected
 [ ] UI Agents: healthy/unhealthy + persistent/leased badges
-[ ] UI Route debugger pin controls
+[ ] UI Route debugger pin controls + score-based contribution panel
+[ ] POST /v1/route score-based → score.provider fixture|guardloop
 [ ] UI Chat stream + Cancel + pin
 [ ] UI Models: Configured in Keymint + Key lifecycle audit table
 [ ] UI Policy SLO form + Agents latency/prefer filters

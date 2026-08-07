@@ -146,16 +146,7 @@ AgentMesh today provides:
 
 #### E9 — Score-based routing production path
 
-**Problem:** GuardLoop integration is optional and under-documented.
-
-**Plan:**
-
-- Default Noop score with deterministic fixture provider for demos
-- Document GuardLoop env + timeout/cache behavior
-- Dashboard: show score contribution when strategy is `score-based`
-- Fallback to least-latency when score provider errors
-
-**Acceptance:** `score-based` works with mock provider in CI; GuardLoop path in staging runbook.
+**Shipped:** `SCORE_PROVIDER=auto|noop|fixture|guardloop` (`auto` → GuardLoop if enabled, else deterministic fixture). Score provider errors fall back to least-latency. Route response includes `score` + `x-agentmesh-score-*` headers; Route debugger shows contribution. GuardLoop timeout/cache documented in `docs/14-ENV.md`; staging steps in `ops/08-STAGING.md`. CI: fixture + error-fallback unit tests.
 
 #### E10 — Adapter SDKs (Go already; Node + Python)
 
@@ -244,7 +235,7 @@ Focus: demos that do not fall over; clear “required agent” story.
 | 1 | E5 Native auth (JWT + org API keys) | **Shipped** — multi-tenant auth |
 | 2 | E3 follow-ups (Keymint audit UI) | **Shipped** — org-scoped audit on Models |
 | 3 | E7 Policy SLOs | **Shipped** — cost/latency filters + metrics |
-| 4 | E9 Score-based path | Differentiated routing |
+| 4 | E9 Score-based path | **Shipped** — fixture/GuardLoop + UI scores |
 | 5 | E11 Helm + metering slice | Deployable + billable |
 
 **Exit criteria:** Two orgs isolated; staging Helm install; usage events flowing.
@@ -348,7 +339,7 @@ E15–E20 as demand warrants; prefer customer pull over speculative build.
 ## 9. Immediate next actions
 
 1. Phase A core (pin, Keymint secrets, stream, health UX) is implemented; keep `21` / `22` / `23` current.
-2. Phase A + Keymint audit + E7 SLOs shipped. Next: design-partner dry-run of `docs/21-MANUAL-TESTING.md`; Phase B remainder (E9, E11).
+2. Phase A + Keymint audit + E7 + E9 shipped. Next: design-partner dry-run of `docs/21-MANUAL-TESTING.md`; Phase B remainder (E11 Helm/metering).
 3. Run design-partner demo script from updated `21-MANUAL-TESTING.md`.
 4. Revisit positioning website copy: **mesh first**, inference second.
 

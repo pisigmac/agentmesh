@@ -75,6 +75,8 @@ For a full walkthrough (capabilities → route → send the question to the agen
 
 **Response**: **200** `RouteResponse` including `destination_agent_id`, `endpoint_url`, `injected_headers` (includes `x-agentmesh-pin=true` when hard-pinned), `fallback_chain`, `timeout_ms`, `max_retries`, `trace_context`.
 
+When `routing_strategy` is `score-based`, REST also returns `score: { provider, fallback?, detail }` and headers `x-agentmesh-score-provider`, optional `x-agentmesh-score-fallback` (`least-latency` on provider error), and `x-agentmesh-score-detail` (per-candidate provider/composite scores).
+
 ## GET/PUT /v1/policy
 
 Org policy document (admin for PUT). Routing SLOs:
