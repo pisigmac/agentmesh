@@ -22,7 +22,7 @@ import (
 
 type Gateway struct {
 	grpcAddr string
-	keys     auth.KeyStore
+	auth     *auth.Service
 	policies *policy.Store
 	registry *registry.Store
 	keymint  *keymint.Facade
@@ -30,10 +30,10 @@ type Gateway struct {
 	catalog  *models.Catalog
 }
 
-func NewGateway(grpcAddr string, keys auth.KeyStore, policies *policy.Store, reg *registry.Store, km *keymint.Facade, catalog *models.Catalog) *Gateway {
+func NewGateway(grpcAddr string, authSvc *auth.Service, policies *policy.Store, reg *registry.Store, km *keymint.Facade, catalog *models.Catalog) *Gateway {
 	return &Gateway{
 		grpcAddr: grpcAddr,
-		keys:     keys,
+		auth:     authSvc,
 		policies: policies,
 		registry: reg,
 		keymint:  km,
@@ -53,30 +53,57 @@ func (g *Gateway) Routes() chi.Router {
 	})
 
 	r.Route("/v1", func(v1 chi.Router) {
-		v1.Use(g.authMiddleware)
-		v1.Post("/agents/register", g.registerAgent)
-		v1.Get("/agents/discover", g.discoverAgents)
-		v1.Post("/agents/health", g.reportHealth)
-		v1.Get("/orgs", g.listOrgs)
-		v1.Post("/route", g.route)
-		v1.Get("/circuit/{agent_id}", g.circuitState)
-		v1.Get("/policy", g.getPolicy)
-		v1.Put("/policy", g.putPolicy)
-		v1.Get("/models", g.listModels)
-		v1.Get("/models/providers", g.listProviders)
-		v1.Get("/secrets/providers", g.listSecrets)
-		v1.Put("/secrets/providers/{provider}", g.putSecret)
-		v1.Delete("/secrets/providers/{provider}", g.deleteSecret)
-		v1.Get("/secrets/keymint", g.keymintStatus)
-		v1.Post("/chat", g.chat)
-		v1.Post("/chat/stream", g.chatStream)
+		v1.Post("/auth/register", g.registerAuth)
+		v1.Post("/auth/login", g.loginAuth)
+
+		v1.Group(func(protected chi.Router) {
+			protected.Use(g.authMiddleware)
+			protected.Post("/auth/logout", g.logoutAuth)
+			protected.Get("/auth/me", g.meAuth)
+			protected.Post("/orgs", g.createOrg)
+			protected.Get("/orgs", g.listAuthOrgs)
+			protected.Post("/orgs/{org}/keys", g.createOrgKey)
+			protected.Get("/orgs/{org}/keys", g.listOrgKeys)
+			protected.Delete("/orgs/{org}/keys/{key_id}", g.revokeOrgKey)
+
+			protected.Post("/agents/register", g.withRole(auth.RoleOperator, g.registerAgent))
+			protected.Get("/agents/discover", g.withRole(auth.RoleViewer, g.discoverAgents))
+			protected.Post("/agents/health", g.withRole(auth.RoleOperator, g.reportHealth))
+			protected.Post("/route", g.withRole(auth.RoleViewer, g.route))
+			protected.Get("/circuit/{agent_id}", g.withRole(auth.RoleViewer, g.circuitState))
+			protected.Get("/policy", g.withRole(auth.RoleViewer, g.getPolicy))
+			protected.Put("/policy", g.withRole(auth.RoleAdmin, g.putPolicy))
+			protected.Get("/models", g.withRole(auth.RoleViewer, g.listModels))
+			protected.Get("/models/providers", g.withRole(auth.RoleViewer, g.listProviders))
+			protected.Get("/secrets/providers", g.withRole(auth.RoleViewer, g.listSecrets))
+			protected.Put("/secrets/providers/{provider}", g.withRole(auth.RoleOperator, g.putSecret))
+			protected.Delete("/secrets/providers/{provider}", g.withRole(auth.RoleOperator, g.deleteSecret))
+			protected.Get("/secrets/keymint", g.withRole(auth.RoleViewer, g.keymintStatus))
+			protected.Post("/chat", g.withRole(auth.RoleViewer, g.chat))
+			protected.Post("/chat/stream", g.withRole(auth.RoleViewer, g.chatStream))
+		})
 	})
 	return r
 }
 
+func (g *Gateway) withRole(min auth.Role, h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		p, ok := auth.PrincipalFrom(r.Context())
+		if !ok {
+			writeJSON(w, http.StatusUnauthorized, errBody("UNAUTHORIZED", "not authenticated"))
+			return
+		}
+		if err := auth.RequireRole(p, min); err != nil {
+			writeJSON(w, http.StatusForbidden, errBody("FORBIDDEN", "insufficient role"))
+			return
+		}
+		h(w, r)
+	}
+}
+
 func (g *Gateway) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		p, err := auth.Authenticate(r.Context(), g.keys,
+		p, err := g.auth.Authenticate(r.Context(),
 			r.Header.Get("X-Org-ID"),
 			r.Header.Get("X-Workspace-ID"),
 			r.Header.Get("Authorization"))
@@ -165,7 +192,6 @@ func (g *Gateway) discoverAgents(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			break
 		}
-		// Explicit bools so healthy=false is not dropped by proto json omitempty.
 		endpoints = append(endpoints, map[string]any{
 			"agent_id":             ep.GetAgentId(),
 			"agent_type":           ep.GetAgentType(),

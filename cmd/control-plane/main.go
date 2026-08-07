@@ -72,7 +72,26 @@ func main() {
 
 	limiter := ratelimit.New(rdb, "agentmesh")
 
-	keys := auth.NewMemoryKeyStore(getenv("AGENTMESH_DEV_API_KEY", "agentmesh-dev-key"))
+	authStore, err := auth.NewStore(cfg.Etcd.Endpoints, cfg.Etcd.Prefix)
+	if err != nil {
+		log.Fatal("auth store", zap.Error(err))
+	}
+	defer authStore.Close()
+	issuer, err := auth.NewTokenIssuer(cfg.Auth.JWTSecret, cfg.Auth.TokenTTLHours)
+	if err != nil {
+		log.Fatal("auth jwt", zap.Error(err))
+	}
+	authSvc := &auth.Service{
+		Store:          authStore,
+		Tokens:         issuer,
+		AllowRegister:  cfg.Auth.AllowRegister,
+		DevAPIKeyPlain: cfg.Auth.DevAPIKey,
+	}
+	if err := authSvc.Bootstrap(ctx, cfg.Auth.BootstrapEmail, cfg.Auth.BootstrapPassword); err != nil {
+		log.Warn("auth bootstrap", zap.Error(err))
+	} else {
+		log.Info("auth ready", zap.Bool("allow_register", cfg.Auth.AllowRegister))
+	}
 
 	bindStore, err := keymint.NewBindStore(cfg.Etcd.Endpoints, cfg.Etcd.Prefix, cfg.Secrets.MasterKey)
 	if err != nil {
@@ -110,7 +129,7 @@ func main() {
 		}
 	}()
 
-	gw := rest.NewGateway(fmt.Sprintf("localhost:%d", cfg.ControlPlane.GRPCPort), keys, policies, reg, kmFacade, catalog)
+	gw := rest.NewGateway(fmt.Sprintf("localhost:%d", cfg.ControlPlane.GRPCPort), authSvc, policies, reg, kmFacade, catalog)
 	httpSrv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.ControlPlane.HTTPPort),
 		Handler: mountHTTP(gw.Routes()),

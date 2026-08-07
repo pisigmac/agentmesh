@@ -1,4 +1,4 @@
-import { getApiBase, getApiKey, getOrgId } from "./config";
+import { clearToken, getApiBase, getApiKey, getOrgId, setOrgId, setToken } from "./config";
 
 export type ApiError = { code: string; message: string };
 
@@ -294,4 +294,82 @@ export async function chatCompletionStream(body: ChatBody, handlers: StreamHandl
       event = "message";
     }
   }
+}
+
+export type AuthUser = { id: string; email: string };
+export type OrgMembership = { id: string; name?: string; role: string };
+export type AuthResponse = { token: string; user: AuthUser; orgs: OrgMembership[] };
+
+export async function login(email: string, password: string): Promise<AuthResponse> {
+  const res = await fetch(`${getApiBase()}/v1/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = body?.error as ApiError | undefined;
+    throw new Error(err?.message || `HTTP ${res.status}`);
+  }
+  const data = body as AuthResponse;
+  setToken(data.token);
+  if (data.orgs?.[0]?.id) setOrgId(data.orgs[0].id);
+  return data;
+}
+
+export async function register(email: string, password: string): Promise<AuthResponse> {
+  const res = await fetch(`${getApiBase()}/v1/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = body?.error as ApiError | undefined;
+    throw new Error(err?.message || `HTTP ${res.status}`);
+  }
+  const data = body as AuthResponse;
+  setToken(data.token);
+  if (data.orgs?.[0]?.id) setOrgId(data.orgs[0].id);
+  return data;
+}
+
+export async function logout() {
+  try {
+    await request("/v1/auth/logout", { method: "POST" });
+  } catch {
+    /* ignore */
+  }
+  clearToken();
+}
+
+export async function fetchMe() {
+  return request<{ user: AuthUser; orgs: OrgMembership[]; current_org?: string; role?: string }>("/v1/auth/me");
+}
+
+export type OrgAPIKey = {
+  key_id: string;
+  org_id: string;
+  name: string;
+  role: string;
+  created_at?: string;
+  revoked_at?: string;
+};
+
+export async function listOrgAPIKeys(org: string) {
+  const data = await request<{ keys: OrgAPIKey[] }>(`/v1/orgs/${encodeURIComponent(org)}/keys`);
+  return data.keys ?? [];
+}
+
+export async function createOrgAPIKey(org: string, name: string, role?: string) {
+  return request<{ key: OrgAPIKey; api_key: string }>(`/v1/orgs/${encodeURIComponent(org)}/keys`, {
+    method: "POST",
+    body: JSON.stringify({ name, role }),
+  });
+}
+
+export async function revokeOrgAPIKey(org: string, keyId: string) {
+  return request<{ status: string }>(`/v1/orgs/${encodeURIComponent(org)}/keys/${encodeURIComponent(keyId)}`, {
+    method: "DELETE",
+  });
 }

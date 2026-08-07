@@ -52,13 +52,18 @@ Configuration is loaded from environment variables in `internal/config/config.go
 | `CLICKHOUSE_USER` | `default` | Username |
 | `CLICKHOUSE_PASSWORD` | `` | Password |
 
-## Auth
+## Auth (native JWT + org API keys)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AUTH_MODE` | `api_key` | `api_key` or `clerk` |
+| `AUTH_JWT_SECRET` | falls back to secrets key / dev string | HS256 secret (min 32 chars) |
+| `AUTH_ALLOW_REGISTER` | `true` | Allow `POST /v1/auth/register` |
+| `AUTH_TOKEN_TTL_HOURS` | `24` | JWT / session lifetime |
+| `AGENTMESH_BOOTSTRAP_EMAIL` | `` | Optional seed admin email when no users exist |
+| `AGENTMESH_BOOTSTRAP_PASSWORD` | `` | Optional seed admin password |
+| `AGENTMESH_DEV_API_KEY` | `agentmesh-dev-key` | Seeded hashed API key for org `default` (scripts/CLI) |
 
-Development uses in-memory key `agentmesh-dev-key` for org `default` when wired in main.
+Console uses Bearer JWT after login. Machines use Bearer org API keys (`amk_…`). Keymint is not the IdP.
 
 ## Model provider secrets (Keymint)
 

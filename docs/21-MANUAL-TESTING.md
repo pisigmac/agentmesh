@@ -398,7 +398,10 @@ Copy and mark pass/fail:
 [ ] Stack start (start-all or start-local)
 [ ] health / ready / dataplane / prometheus / clickhouse ping
 [ ] Keymint up; KEYMINT_* set on control plane
-[ ] seed-policy.sh
+[ ] POST /v1/auth/register or login → JWT; GET /v1/auth/me
+[ ] Create org API key; curl with Bearer amk_…; revoke → 401
+[ ] Viewer cannot PUT /v1/policy; admin can
+[ ] seed-policy.sh (dev API key still works)
 [ ] seed-all-agents.sh (9 agents, persistent)
 [ ] GET /v1/orgs
 [ ] GET /v1/agents/discover?include_unhealthy=1&limit=256 (healthy + persistent flags)

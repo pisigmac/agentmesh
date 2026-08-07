@@ -256,6 +256,60 @@ components:
             message:
               type: string
 paths:
+  /v1/auth/register:
+    post:
+      operationId: authRegister
+      summary: Register user (native auth)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '201':
+          description: JWT + user + orgs
+  /v1/auth/login:
+    post:
+      operationId: authLogin
+      summary: Login (native auth)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '200':
+          description: JWT + user + orgs
+  /v1/auth/me:
+    get:
+      operationId: authMe
+      summary: Current user and org memberships
+      responses:
+        '200':
+          description: User profile
+  /v1/auth/logout:
+    post:
+      operationId: authLogout
+      summary: Revoke JWT session
+      responses:
+        '200':
+          description: Logged out
   /v1/agents/register:
     post:
       operationId: registerAgent

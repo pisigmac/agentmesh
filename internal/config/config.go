@@ -58,7 +58,12 @@ type ClickHouseConfig struct {
 }
 
 type AuthConfig struct {
-	Mode string // api_key | clerk
+	JWTSecret         string
+	AllowRegister     bool
+	TokenTTLHours     int
+	BootstrapEmail    string
+	BootstrapPassword string
+	DevAPIKey         string
 }
 
 type SecretsConfig struct {
@@ -128,7 +133,12 @@ func Load() Config {
 			Password: getenv("CLICKHOUSE_PASSWORD", ""),
 		},
 		Auth: AuthConfig{
-			Mode: getenv("AUTH_MODE", "api_key"),
+			JWTSecret:         getenv("AUTH_JWT_SECRET", getenv("AGENTMESH_SECRETS_KEY", "agentmesh-dev-jwt-secret-change-me!!")),
+			AllowRegister:     getenvBool("AUTH_ALLOW_REGISTER", true),
+			TokenTTLHours:     getenvInt("AUTH_TOKEN_TTL_HOURS", 24),
+			BootstrapEmail:    getenv("AGENTMESH_BOOTSTRAP_EMAIL", ""),
+			BootstrapPassword: getenv("AGENTMESH_BOOTSTRAP_PASSWORD", ""),
+			DevAPIKey:         getenv("AGENTMESH_DEV_API_KEY", "agentmesh-dev-key"),
 		},
 		Secrets: SecretsConfig{
 			MasterKey: getenv("AGENTMESH_SECRETS_KEY", getenv("AGENTMESH_DEV_API_KEY", "agentmesh-dev-key")),

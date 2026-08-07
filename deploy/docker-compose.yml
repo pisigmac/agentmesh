@@ -37,6 +37,8 @@ services:
       CLICKHOUSE_DATABASE: agentmesh
       AGENTMESH_DEV_API_KEY: agentmesh-dev-key
       AGENTMESH_SECRETS_KEY: ${AGENTMESH_SECRETS_KEY:-agentmesh-dev-key}
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-agentmesh-dev-jwt-secret-change-me!!}
+      AUTH_ALLOW_REGISTER: ${AUTH_ALLOW_REGISTER:-true}
       KEYMINT_BASE_URL: ${KEYMINT_BASE_URL:-}
       KEYMINT_API_KEY: ${KEYMINT_API_KEY:-}
       KEYMINT_TEAM_ID: ${KEYMINT_TEAM_ID:-}

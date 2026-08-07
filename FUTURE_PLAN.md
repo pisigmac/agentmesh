@@ -17,7 +17,8 @@ AgentMesh today provides:
 | Routing | Capability match, least-latency/cost, round-robin, score-based (optional GuardLoop) |
 | Resilience | Redis circuit breakers, rate limits |
 | Data plane | Advisory route + HTTP proxy path |
-| Operator UI | Landing, dashboard, agents, routes, circuits, policy, settings |
+| Auth | Native JWT sessions + hashed org API keys (`amk_`) + RBAC (viewer/operator/admin) |
+| Operator UI | Landing, login/register, dashboard, agents, routes, circuits, policy, settings |
 | Inference layer | YAML model catalog (`deploy/models.yaml`), **Keymint**-backed provider keys + proxy, streaming chat, destination pin |
 | Ops | Docker Compose, Helm sketch, scripts, manual QA + routing docs |
 
@@ -95,24 +96,26 @@ AgentMesh today provides:
 
 **Shipped:** Provider keys maintained in **Keymint** (vault + `/provider-keys` + virtual keys). AgentMesh secrets REST is a facade; chat uses Keymint `POST /v1/proxy/chat/completions`. Virtual-key bindings encrypted in etcd with `AGENTMESH_SECRETS_KEY`. Audit/rotation delegated to Keymint.
 
-**Follow-ups:** surface Keymint audit in console; secrets-admin role with OIDC (E5).
+**Follow-ups:** surface Keymint audit in console; finer secrets-admin UX.
 
 #### E4 — First-class health and lease keepalive — **done (Phase A)**
 
 **Shipped:** `POST /v1/agents/health`; discover `include_unhealthy` + `healthy`/`persistent` on `AgentEndpoint`; Agents UI badges; keepalive/persistent docs.
 
-#### E5 — Auth beyond one shared mesh key
+#### E5 — Native auth (JWT + org API keys) — **implemented**
 
-**Problem:** `MemoryKeyStore` + single dev key is not multi-tenant ready.
+**Problem:** `MemoryKeyStore` + single dev key is not multi-tenant ready. Clerk/OIDC rejected in favor of first-party auth.
 
-**Plan:**
+**Shipped:**
 
-- Persistent API key store (etcd or Postgres) per org, hashed at rest
-- `AUTH_MODE=clerk` (or OIDC) for UI; mesh keys for machines
-- RBAC: viewer / operator / admin (policy + secrets)
-- Key issuance + rotation endpoints; UI Settings for org keys
+- etcd users, sessions (`jti`), org memberships, hashed org API keys (`amk_`)
+- `POST /v1/auth/register|login`, `GET /v1/auth/me`, `POST /v1/auth/logout`
+- Org API key CRUD; dual Bearer auth (JWT session or API key)
+- RBAC: viewer / operator / admin
+- Console login/register + Settings key management
+- Keymint remains secrets/proxy only — not the IdP
 
-**Acceptance:** Two orgs, isolated keys; UI login path documented; machine keys still work for `/v1/*`.
+**Acceptance:** Two orgs, isolated keys; UI login; machine keys work for `/v1/*`.
 
 ---
 
@@ -254,7 +257,7 @@ Focus: demos that do not fall over; clear “required agent” story.
 
 | Order | Item | Outcome |
 |------:|------|---------|
-| 1 | E5 Persistent keys + OIDC/Clerk | Real multi-tenant auth |
+| 1 | E5 Native auth (JWT + org API keys) | **Shipped** — multi-tenant auth |
 | 2 | E3 follow-ups (Keymint audit UI) | Compliance-friendly ops |
 | 3 | E7 Policy SLOs | Cost/latency guardrails |
 | 4 | E9 Score-based path | Differentiated routing |

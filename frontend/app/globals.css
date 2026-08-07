@@ -852,3 +852,21 @@ table.data tr:last-child td {
   text-decoration: none;
 }
 
+.auth-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 2rem 1rem;
+  background: var(--bg);
+}
+
+.auth-card {
+  width: min(420px, 100%);
+}
+
+.sidebar-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+

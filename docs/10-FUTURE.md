@@ -6,10 +6,10 @@ Planned enhancements beyond the current 0.1.x control/data plane split. Timeline
 
 ## Q3 — Control plane hardening
 
-- Persistent API key store (replace in-memory `MemoryKeyStore` in production paths)
-- Clerk auth mode (`AUTH_MODE=clerk`) fully documented and tested
+- Native auth shipped (JWT sessions + org API keys + RBAC) — see [`FUTURE_PLAN.md`](../FUTURE_PLAN.md) E5
 - mTLS between data plane and agent endpoints (opt-in)
 - Separate Helm templates for data plane Deployment + HPA
+- Optional later: password reset email, MFA
 
 ## Q4 — Routing intelligence
 

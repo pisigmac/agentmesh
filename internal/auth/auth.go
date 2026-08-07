@@ -2,32 +2,11 @@ package auth
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"errors"
 	"strings"
 )
 
-var (
-	ErrMissingAuth   = errors.New("missing authorization")
-	ErrInvalidKey    = errors.New("invalid api key")
-	ErrMissingOrg    = errors.New("missing org header")
-	ErrInvalidOrgID  = errors.New("invalid org id")
-)
-
-type ContextKey struct{}
-
-type Principal struct {
-	OrgID string
-	KeyID string
-}
-
-type KeyStore interface {
-	ValidateKey(ctx context.Context, orgID, keyPlaintext string) (keyID string, ok bool, err error)
-}
-
+// MemoryKeyStore is retained for unit tests of hash helpers / legacy paths.
 type MemoryKeyStore struct {
-	// org -> kid -> sha256 hex
 	keys map[string]map[string]string
 }
 
@@ -40,35 +19,16 @@ func NewMemoryKeyStore(devKey string) *MemoryKeyStore {
 	}
 }
 
-func HashKey(plain string) string {
-	sum := sha256.Sum256([]byte(plain))
-	return hex.EncodeToString(sum[:])
-}
-
 func (m *MemoryKeyStore) ValidateKey(_ context.Context, orgID, keyPlaintext string) (string, bool, error) {
-	if kid, ok := m.validateOrgKey(orgID, keyPlaintext); ok {
-		return kid, true, nil
-	}
-	if orgID != "default" {
-		if kid, ok := m.validateOrgKey("default", keyPlaintext); ok {
-			return kid, true, nil
+	if orgKeys, ok := m.keys[orgID]; ok {
+		want := HashKey(keyPlaintext)
+		for kid, hash := range orgKeys {
+			if hash == want {
+				return kid, true, nil
+			}
 		}
 	}
 	return "", false, nil
-}
-
-func (m *MemoryKeyStore) validateOrgKey(orgID, keyPlaintext string) (string, bool) {
-	orgKeys, ok := m.keys[orgID]
-	if !ok {
-		return "", false
-	}
-	want := HashKey(keyPlaintext)
-	for kid, hash := range orgKeys {
-		if hash == want {
-			return kid, true
-		}
-	}
-	return "", false
 }
 
 func ParseBearer(authHeader string) (string, error) {
@@ -113,7 +73,19 @@ func validOrgID(s string) bool {
 	return true
 }
 
-func Authenticate(ctx context.Context, store KeyStore, orgID, workspaceID, authHeader string) (Principal, error) {
+func WithPrincipal(ctx context.Context, p Principal) context.Context {
+	return context.WithValue(ctx, ContextKey{}, p)
+}
+
+func PrincipalFrom(ctx context.Context) (Principal, bool) {
+	p, ok := ctx.Value(ContextKey{}).(Principal)
+	return p, ok
+}
+
+// Authenticate is a thin wrapper used by older tests; production uses Service.Authenticate.
+func Authenticate(ctx context.Context, store interface {
+	ValidateKey(ctx context.Context, orgID, keyPlaintext string) (keyID string, ok bool, err error)
+}, orgID, workspaceID, authHeader string) (Principal, error) {
 	org, err := OrgFromHeaders(orgID, workspaceID)
 	if err != nil {
 		return Principal{}, err
@@ -129,14 +101,5 @@ func Authenticate(ctx context.Context, store KeyStore, orgID, workspaceID, authH
 	if !ok {
 		return Principal{}, ErrInvalidKey
 	}
-	return Principal{OrgID: org, KeyID: kid}, nil
-}
-
-func WithPrincipal(ctx context.Context, p Principal) context.Context {
-	return context.WithValue(ctx, ContextKey{}, p)
-}
-
-func PrincipalFrom(ctx context.Context) (Principal, bool) {
-	p, ok := ctx.Value(ContextKey{}).(Principal)
-	return p, ok
+	return Principal{OrgID: org, KeyID: kid, Role: RoleAdmin, AuthType: AuthTypeAPIKey}, nil
 }

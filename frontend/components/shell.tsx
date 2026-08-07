@@ -43,6 +43,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
           ))}
         </nav>
         <div className="sidebar-foot">
+          <Link href="/settings" className="sidebar-foot-link">
+            Account / keys
+          </Link>
           <Link href="/" className="sidebar-foot-link">
             ← Site home
           </Link>

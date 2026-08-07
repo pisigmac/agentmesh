@@ -6,15 +6,26 @@ The control plane exposes JSON REST on `CONTROL_PLANE_HTTP_PORT` ( **8080** insi
 
 | Header | Required | Description |
 |--------|----------|-------------|
-| `Authorization` | Yes | `Bearer <api_key>` |
+| `Authorization` | Yes (except auth register/login) | `Bearer <jwt>` or `Bearer <org_api_key>` (`amk_…` or seeded `agentmesh-dev-key`) |
 | `X-Org-ID` | Recommended | Tenant identifier (1–64 chars, alphanumeric, `-`, `_`) |
 | `X-Workspace-ID` | Optional | Alias for org when `X-Org-ID` omitted |
 
-Invalid or missing credentials return **401** with:
+Roles: `viewer` < `operator` < `admin` (membership or API key role).
 
-```json
-{"error":{"code":"UNAUTHORIZED","message":"..."}}
-```
+### Auth endpoints
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/v1/auth/register` | Public | Create user + admin on `default` (if allowed) |
+| `POST` | `/v1/auth/login` | Public | Returns JWT + orgs |
+| `POST` | `/v1/auth/logout` | JWT | Revoke session |
+| `GET` | `/v1/auth/me` | JWT | User + memberships |
+| `POST` | `/v1/orgs` | JWT | Create org (caller admin) |
+| `POST` | `/v1/orgs/{org}/keys` | operator+ | Create API key (plaintext once) |
+| `GET` | `/v1/orgs/{org}/keys` | operator+ | List key metadata |
+| `DELETE` | `/v1/orgs/{org}/keys/{key_id}` | operator+ | Revoke key |
+
+Invalid credentials return **401**; insufficient role **403**.
 
 ## Health (unauthenticated)
 
