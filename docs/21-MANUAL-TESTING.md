@@ -292,10 +292,11 @@ Open **`http://localhost:43000`** (Docker) or run `./scripts/start-frontend-dev.
 
 | Step | Action | Expected |
 |------|--------|----------|
-| 1 | Page load | JSON policy document |
-| 2 | Edit `default_strategy` to `least-cost`, **Save** | Success alert |
-| 3 | **Reload** | Change persisted |
-| 4 | Restore from example file via API or revert manually | — |
+| 1 | Page load | Routing SLOs form + JSON policy document |
+| 2 | Set max cost / max latency / prefer free\|local → **Save SLOs** | Persist; route/discover honor filters |
+| 3 | Edit `default_strategy` to `least-cost` in JSON, **Save JSON** | Success alert |
+| 4 | **Reload** | Change persisted |
+| 5 | Restore from example file via API or revert manually | — |
 
 ### 6.7 Site home link
 
@@ -420,7 +421,9 @@ Copy and mark pass/fail:
 [ ] POST /v1/agents/health (badge flips in UI)
 [ ] POST /v1/route with destination_agent_id (pin; x-agentmesh-pin)
 [ ] GET /v1/circuit/{agent_id}
-[ ] GET/PUT /v1/policy
+[ ] GET/PUT /v1/policy (max_cost_usd / max_latency_ms / prefer_*)
+[ ] Route rejects when all candidates exceed SLO (metrics: agentmesh_route_slo_reject_total)
+[ ] Discover: max_latency_ms + prefer_free/prefer_local query params
 [ ] PUT /v1/secrets/providers/{provider} → Keymint; GET list shows configured
 [ ] GET /v1/secrets/audit → org-scoped Keymint lifecycle events (operator+)
 [ ] POST /v1/chat and POST /v1/chat/stream (SSE meta/token/done)
@@ -429,6 +432,7 @@ Copy and mark pass/fail:
 [ ] UI Route debugger pin controls
 [ ] UI Chat stream + Cancel + pin
 [ ] UI Models: Configured in Keymint + Key lifecycle audit table
+[ ] UI Policy SLO form + Agents latency/prefer filters
 [ ] UI Circuits / Policy / Landing ↔ console
 [ ] make test && frontend npm run build
 [ ] stop-all (or stop-local)

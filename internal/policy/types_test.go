@@ -36,3 +36,21 @@ func TestMergeRoutingDefaults(t *testing.T) {
 		t.Fatalf("merge failed: %+v", m.Routing)
 	}
 }
+
+func TestEffectiveMaxCostAndMergeSLOs(t *testing.T) {
+	base := DefaultOrgPolicy("o", config.Config{})
+	base.Routing.DefaultMaxCost = 0.02
+	if base.Routing.EffectiveMaxCost() != 0.02 {
+		t.Fatalf("legacy default_max_cost: %v", base.Routing.EffectiveMaxCost())
+	}
+	overlay := OrgPolicy{Routing: RoutingPolicy{
+		MaxCostUSD: 0.01, MaxLatencyMs: 250, PreferFree: true, PreferLocal: true,
+	}}
+	m := Merge(base, overlay)
+	if m.Routing.EffectiveMaxCost() != 0.01 {
+		t.Fatalf("max_cost_usd wins: %v", m.Routing.EffectiveMaxCost())
+	}
+	if m.Routing.MaxLatencyMs != 250 || !m.Routing.PreferFree || !m.Routing.PreferLocal {
+		t.Fatalf("SLO merge: %+v", m.Routing)
+	}
+}

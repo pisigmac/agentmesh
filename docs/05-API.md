@@ -46,7 +46,12 @@ Query parameters:
 
 - `capability` — filter by capability tag
 - `routing_strategy` — e.g. `least-latency`, `score-based`
-- `max_cost` — float USD ceiling
+- `max_cost` — float USD ceiling (overrides org policy when set)
+- `max_latency_ms` — latency EWMA ceiling (REST post-filter; org policy also applied in control plane)
+- `prefer_free` / `prefer_local` — `1`/`true` soft-rank free or local agents first
+- `limit`, `org_id`, `include_unhealthy=1`
+
+Org policy SLOs (`routing.max_cost_usd`, `max_latency_ms`, `prefer_free`, `prefer_local`) apply on discover and route. See Policy section below.
 
 **Response**: **200** `{ "agents": [ AgentEndpoint, ... ] }`
 
@@ -70,9 +75,18 @@ For a full walkthrough (capabilities → route → send the question to the agen
 
 **Response**: **200** `RouteResponse` including `destination_agent_id`, `endpoint_url`, `injected_headers` (includes `x-agentmesh-pin=true` when hard-pinned), `fallback_chain`, `timeout_ms`, `max_retries`, `trace_context`.
 
-## GET /v1/agents/discover
+## GET/PUT /v1/policy
 
-Query params: `capability`, `routing_strategy`, `max_cost`, `limit`, `org_id`, `include_unhealthy=1` (catalog UI; includes unhealthy agents with `healthy` / `persistent` flags).
+Org policy document (admin for PUT). Routing SLOs:
+
+| Field | Effect |
+|-------|--------|
+| `routing.max_cost_usd` | Hard drop candidates with higher cost (alias: `default_max_cost`) |
+| `routing.max_latency_ms` | Hard drop candidates with higher latency EWMA |
+| `routing.prefer_free` | Soft-prefer `cost=0` or `metadata.tier=free` |
+| `routing.prefer_local` | Soft-prefer localhost / `metadata.local=true` |
+
+Route rejects with FailedPrecondition when every candidate fails SLOs; counter `agentmesh_route_slo_reject_total`.
 
 ## POST /v1/agents/health
 

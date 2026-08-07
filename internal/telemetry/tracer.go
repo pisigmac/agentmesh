@@ -27,7 +27,23 @@ var (
 		Help:    "Routing decision latency ms",
 		Buckets: prometheus.ExponentialBuckets(0.5, 2, 16),
 	}, []string{"org", "mode"})
+
+	RouteSLORejectTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "agentmesh_route_slo_reject_total",
+		Help: "Routes rejected because no candidate met cost/latency SLOs",
+	}, []string{"org", "reason"})
 )
+
+// ObserveSLOReject increments the SLO reject counter (reason: max_cost, max_latency, slo_filter).
+func ObserveSLOReject(org, reason string) {
+	if org == "" {
+		org = "default"
+	}
+	if reason == "" {
+		reason = "slo_filter"
+	}
+	RouteSLORejectTotal.WithLabelValues(org, reason).Inc()
+}
 
 func InitTracer(ctx context.Context, cfg config.TraceLensConfig, serviceName string) (func(context.Context) error, error) {
 	if !cfg.Enabled || cfg.Endpoint == "" {

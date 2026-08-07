@@ -2,6 +2,10 @@
   "org_id": "default",
   "routing": {
     "default_strategy": "least-latency",
+    "max_cost_usd": 0.05,
+    "max_latency_ms": 2000,
+    "prefer_free": false,
+    "prefer_local": false,
     "default_timeout_ms": 30000,
     "default_max_retries": 2
   },

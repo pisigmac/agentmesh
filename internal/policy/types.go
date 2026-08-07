@@ -17,9 +17,21 @@ type OrgPolicy struct {
 
 type RoutingPolicy struct {
 	DefaultStrategy   string  `json:"default_strategy"`
-	DefaultMaxCost    float64 `json:"default_max_cost,omitempty"`
+	DefaultMaxCost    float64 `json:"default_max_cost,omitempty"` // legacy alias for max_cost_usd
+	MaxCostUSD        float64 `json:"max_cost_usd,omitempty"`
+	MaxLatencyMs      float64 `json:"max_latency_ms,omitempty"`
+	PreferFree        bool    `json:"prefer_free,omitempty"`
+	PreferLocal       bool    `json:"prefer_local,omitempty"`
 	DefaultTimeoutMs  int32   `json:"default_timeout_ms"`
 	DefaultMaxRetries int32   `json:"default_max_retries"`
+}
+
+// EffectiveMaxCost returns max_cost_usd, falling back to default_max_cost.
+func (r RoutingPolicy) EffectiveMaxCost() float64 {
+	if r.MaxCostUSD > 0 {
+		return r.MaxCostUSD
+	}
+	return r.DefaultMaxCost
 }
 
 type RateLimitPolicy struct {
@@ -66,6 +78,18 @@ func Merge(base, overlay OrgPolicy) OrgPolicy {
 	}
 	if overlay.Routing.DefaultMaxCost > 0 {
 		out.Routing.DefaultMaxCost = overlay.Routing.DefaultMaxCost
+	}
+	if overlay.Routing.MaxCostUSD > 0 {
+		out.Routing.MaxCostUSD = overlay.Routing.MaxCostUSD
+	}
+	if overlay.Routing.MaxLatencyMs > 0 {
+		out.Routing.MaxLatencyMs = overlay.Routing.MaxLatencyMs
+	}
+	if overlay.Routing.PreferFree {
+		out.Routing.PreferFree = true
+	}
+	if overlay.Routing.PreferLocal {
+		out.Routing.PreferLocal = true
 	}
 	if overlay.Routing.DefaultTimeoutMs > 0 {
 		out.Routing.DefaultTimeoutMs = overlay.Routing.DefaultTimeoutMs

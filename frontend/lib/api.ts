@@ -55,11 +55,21 @@ export async function listOrgs(): Promise<string[]> {
 export async function discoverAgents(
   capability?: string,
   maxCost?: number,
-  opts?: { orgId?: string; limit?: number; includeUnhealthy?: boolean },
+  opts?: {
+    orgId?: string;
+    limit?: number;
+    includeUnhealthy?: boolean;
+    maxLatencyMs?: number;
+    preferFree?: boolean;
+    preferLocal?: boolean;
+  },
 ) {
   const q = new URLSearchParams();
   if (capability) q.set("capability", capability);
   if (maxCost != null && maxCost > 0) q.set("max_cost", String(maxCost));
+  if (opts?.maxLatencyMs != null && opts.maxLatencyMs > 0) q.set("max_latency_ms", String(opts.maxLatencyMs));
+  if (opts?.preferFree) q.set("prefer_free", "1");
+  if (opts?.preferLocal) q.set("prefer_local", "1");
   if (opts?.limit != null && opts.limit > 0) q.set("limit", String(opts.limit));
   if (opts?.includeUnhealthy) q.set("include_unhealthy", "1");
   const data = await request<{ agents: AgentEndpoint[] }>(`/v1/agents/discover?${q}`, undefined, {

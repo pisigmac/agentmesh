@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"sort"
+	"strings"
 
 	"github.com/agentmesh/agentmesh/internal/registry"
 	"github.com/agentmesh/agentmesh/internal/score"
@@ -37,12 +38,23 @@ func NewEngine(scores ScoreProvider) *Engine {
 	return &Engine{Scores: scores, rr: map[string]int{}}
 }
 
+// FilterStats counts hard SLO drops during candidate filtering.
+type FilterStats struct {
+	RejectedCost    int
+	RejectedLatency int
+	Kept            int
+}
+
 type RankInput struct {
-	OrgID      string
-	Capability string
-	MaxCost    float64
-	Strategy   Strategy
-	Agents     []registry.AgentRecord
+	OrgID        string
+	Capability   string
+	MaxCost      float64
+	MaxLatencyMs float64
+	PreferFree   bool
+	PreferLocal  bool
+	Strategy     Strategy
+	Agents       []registry.AgentRecord
+	Stats        *FilterStats // optional; filled by Rank/filter
 }
 
 type Ranked struct {
@@ -59,13 +71,14 @@ func (e *Engine) Rank(in RankInput) []Ranked {
 	if strategy == "" {
 		strategy = StrategyCapabilityMatch
 	}
+	var ranked []Ranked
 	switch strategy {
 	case StrategyLeastCost:
-		return rankBy(candidates, func(a registry.AgentRecord) float64 {
+		ranked = rankBy(candidates, func(a registry.AgentRecord) float64 {
 			return -costScore(a)
 		})
 	case StrategyLeastLatency:
-		return rankBy(candidates, func(a registry.AgentRecord) float64 {
+		ranked = rankBy(candidates, func(a registry.AgentRecord) float64 {
 			return -latencyScore(a)
 		})
 	case StrategyRoundRobin:
@@ -77,21 +90,23 @@ func (e *Engine) Rank(in RankInput) []Ranked {
 		for i, a := range rotated {
 			out[i] = Ranked{Agent: a, Score: float64(len(rotated) - i)}
 		}
-		return out
+		ranked = out
 	case StrategyScoreBased:
-		return rankBy(candidates, func(a registry.AgentRecord) float64 {
+		ranked = rankBy(candidates, func(a registry.AgentRecord) float64 {
 			gl := e.Scores.Score(context.Background(), a.AgentType)
 			return gl*0.4 + a.SuccessRate*30 + (1/latencyScore(a))*20 - costScore(a)*10
 		})
 	default:
-		return rankBy(candidates, func(a registry.AgentRecord) float64 {
-			return a.SuccessRate*40 + (1 / math.Max(latencyScore(a), 1)) * 30 - costScore(a)*20
+		ranked = rankBy(candidates, func(a registry.AgentRecord) float64 {
+			return a.SuccessRate*40 + (1/math.Max(latencyScore(a), 1))*30 - costScore(a)*20
 		})
 	}
+	return PreferSLO(ranked, in.PreferFree, in.PreferLocal)
 }
 
 func filter(in RankInput) []registry.AgentRecord {
 	var out []registry.AgentRecord
+	stats := in.Stats
 	for _, a := range in.Agents {
 		if !a.Healthy {
 			continue
@@ -100,9 +115,21 @@ func filter(in RankInput) []registry.AgentRecord {
 			continue
 		}
 		if in.MaxCost > 0 && costScore(a) > in.MaxCost {
+			if stats != nil {
+				stats.RejectedCost++
+			}
+			continue
+		}
+		if in.MaxLatencyMs > 0 && latencyScore(a) > in.MaxLatencyMs {
+			if stats != nil {
+				stats.RejectedLatency++
+			}
 			continue
 		}
 		out = append(out, a)
+	}
+	if stats != nil {
+		stats.Kept = len(out)
 	}
 	return out
 }
@@ -128,6 +155,55 @@ func latencyScore(a registry.AgentRecord) float64 {
 		return a.LatencyEWMA
 	}
 	return 100
+}
+
+// CostOf is exported for REST/discover post-filters.
+func CostOf(a registry.AgentRecord) float64 { return costScore(a) }
+
+// LatencyOf is exported for REST/discover post-filters.
+func LatencyOf(a registry.AgentRecord) float64 { return latencyScore(a) }
+
+func IsFreeAgent(a registry.AgentRecord) bool {
+	if costScore(a) == 0 {
+		return true
+	}
+	if a.Metadata != nil {
+		if strings.EqualFold(a.Metadata["tier"], "free") || strings.EqualFold(a.Metadata["free"], "true") {
+			return true
+		}
+	}
+	return false
+}
+
+func IsLocalAgent(a registry.AgentRecord) bool {
+	if a.Metadata != nil {
+		if strings.EqualFold(a.Metadata["local"], "true") || strings.EqualFold(a.Metadata["deployment"], "local") {
+			return true
+		}
+	}
+	ep := strings.ToLower(a.EndpointURL)
+	return strings.Contains(ep, "127.0.0.1") || strings.Contains(ep, "localhost") || strings.Contains(ep, "[::1]")
+}
+
+// PreferSLO soft-ranks free and/or local agents ahead of others.
+func PreferSLO(ranked []Ranked, preferFree, preferLocal bool) []Ranked {
+	if len(ranked) == 0 || (!preferFree && !preferLocal) {
+		return ranked
+	}
+	score := func(r Ranked) int {
+		n := 0
+		if preferFree && IsFreeAgent(r.Agent) {
+			n += 2
+		}
+		if preferLocal && IsLocalAgent(r.Agent) {
+			n += 1
+		}
+		return n
+	}
+	sort.SliceStable(ranked, func(i, j int) bool {
+		return score(ranked[i]) > score(ranked[j])
+	})
+	return ranked
 }
 
 func FilterByFallbackTypes(ranked []Ranked, types []string) []Ranked {
@@ -191,4 +267,15 @@ func FindAgent(agents []registry.AgentRecord, agentID string) *registry.AgentRec
 		}
 	}
 	return nil
+}
+
+// MeetsSLOs reports whether an agent passes hard cost/latency ceilings.
+func MeetsSLOs(a registry.AgentRecord, maxCost, maxLatencyMs float64) bool {
+	if maxCost > 0 && costScore(a) > maxCost {
+		return false
+	}
+	if maxLatencyMs > 0 && latencyScore(a) > maxLatencyMs {
+		return false
+	}
+	return true
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/agentmesh/agentmesh/internal/ratelimit"
 	"github.com/agentmesh/agentmesh/internal/registry"
 	"github.com/agentmesh/agentmesh/internal/router"
+	"github.com/agentmesh/agentmesh/internal/telemetry"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -75,9 +76,10 @@ func (s *Server) DiscoverAgents(req *agentmeshv1.DiscoveryQuery, stream agentmes
 		strategy = pol.Routing.DefaultStrategy
 	}
 	maxCost := req.GetMaxCost()
-	if maxCost == 0 && pol.Routing.DefaultMaxCost > 0 {
-		maxCost = pol.Routing.DefaultMaxCost
+	if maxCost == 0 {
+		maxCost = pol.Routing.EffectiveMaxCost()
 	}
+	maxLatency := pol.Routing.MaxLatencyMs
 	agents, err := s.reg.ListByOrg(ctx, req.GetOrgId())
 	if err != nil {
 		return status.Errorf(codes.Internal, "list: %v", err)
@@ -92,30 +94,42 @@ func (s *Server) DiscoverAgents(req *agentmeshv1.DiscoveryQuery, stream agentmes
 	}
 
 	if req.GetIncludeUnhealthy() {
-		// Catalog listing: return all agents (optionally capability-filtered) with health flags.
-		n := 0
+		// Catalog listing with optional SLO filters (cost/latency) and soft preferences.
+		var catalog []registry.AgentRecord
 		for _, a := range agents {
 			if req.GetCapability() != "" && !registry.HasCapability(a, req.GetCapability()) {
 				continue
 			}
-			if n >= limit {
+			if !router.MeetsSLOs(a, maxCost, maxLatency) {
+				continue
+			}
+			catalog = append(catalog, a)
+		}
+		ranked := make([]router.Ranked, len(catalog))
+		for i, a := range catalog {
+			ranked[i] = router.Ranked{Agent: a, Score: 0}
+		}
+		ranked = router.PreferSLO(ranked, pol.Routing.PreferFree, pol.Routing.PreferLocal)
+		for i, r := range ranked {
+			if i >= limit {
 				break
 			}
-			ep := toEndpoint(a, 0)
-			if err := stream.Send(ep); err != nil {
+			if err := stream.Send(toEndpoint(r.Agent, r.Score)); err != nil {
 				return err
 			}
-			n++
 		}
 		return nil
 	}
 
 	ranked := s.engine.Rank(router.RankInput{
-		OrgID:      req.GetOrgId(),
-		Capability: req.GetCapability(),
-		MaxCost:    maxCost,
-		Strategy:   router.Strategy(strategy),
-		Agents:     agents,
+		OrgID:        req.GetOrgId(),
+		Capability:   req.GetCapability(),
+		MaxCost:      maxCost,
+		MaxLatencyMs: maxLatency,
+		PreferFree:   pol.Routing.PreferFree,
+		PreferLocal:  pol.Routing.PreferLocal,
+		Strategy:     router.Strategy(strategy),
+		Agents:       agents,
 	})
 	for i, r := range ranked {
 		if i >= limit {
@@ -171,6 +185,9 @@ func (s *Server) RouteRequest(ctx context.Context, req *agentmeshv1.RoutePayload
 	pinned := false
 	var ranked []router.Ranked
 
+	maxCost := pol.Routing.EffectiveMaxCost()
+	maxLatency := pol.Routing.MaxLatencyMs
+
 	if pinID := strings.TrimSpace(req.GetDestinationAgentId()); pinID != "" {
 		rec := router.FindAgent(agents, pinID)
 		if rec == nil {
@@ -182,6 +199,10 @@ func (s *Server) RouteRequest(ctx context.Context, req *agentmeshv1.RoutePayload
 			}
 			if req.GetCapability() != "" && !registry.HasCapability(*rec, req.GetCapability()) {
 				return nil, status.Errorf(codes.InvalidArgument, "pinned agent %s lacks capability %s", pinID, req.GetCapability())
+			}
+			if !router.MeetsSLOs(*rec, maxCost, maxLatency) {
+				telemetry.ObserveSLOReject(req.GetOrgId(), sloRejectReason(maxCost, maxLatency, *rec))
+				return nil, status.Errorf(codes.FailedPrecondition, "pinned agent %s exceeds org cost/latency SLO", pinID)
 			}
 		}
 		cbCfg := policy.ResolveCircuit(pol, rec.AgentID, rec.AgentType)
@@ -199,15 +220,31 @@ func (s *Server) RouteRequest(ctx context.Context, req *agentmeshv1.RoutePayload
 	}
 
 	if !pinned {
+		var stats router.FilterStats
 		ranked = s.engine.Rank(router.RankInput{
-			OrgID:      req.GetOrgId(),
-			Capability: req.GetCapability(),
-			Strategy:   router.Strategy(strategy),
-			Agents:     agents,
+			OrgID:        req.GetOrgId(),
+			Capability:   req.GetCapability(),
+			MaxCost:      maxCost,
+			MaxLatencyMs: maxLatency,
+			PreferFree:   pol.Routing.PreferFree,
+			PreferLocal:  pol.Routing.PreferLocal,
+			Strategy:     router.Strategy(strategy),
+			Agents:       agents,
+			Stats:        &stats,
 		})
 		ranked = router.FilterByFallbackTypes(ranked, req.GetFallbackAgentTypes())
 		ranked = router.PreferAgentIDs(ranked, req.GetPreferAgentIds())
 		if len(ranked) == 0 {
+			if stats.RejectedCost > 0 || stats.RejectedLatency > 0 {
+				reason := "slo_filter"
+				if stats.RejectedCost > 0 && stats.RejectedLatency == 0 {
+					reason = "max_cost"
+				} else if stats.RejectedLatency > 0 && stats.RejectedCost == 0 {
+					reason = "max_latency"
+				}
+				telemetry.ObserveSLOReject(req.GetOrgId(), reason)
+				return nil, status.Error(codes.FailedPrecondition, "no route: all candidates exceed org cost/latency SLO")
+			}
 			return nil, status.Error(codes.NotFound, "no route")
 		}
 	}
@@ -298,4 +335,17 @@ func NowUnix() int64 { return time.Now().Unix() }
 
 func FormatErr(e error) error {
 	return fmt.Errorf("%w", e)
+}
+
+func sloRejectReason(maxCost, maxLatency float64, a registry.AgentRecord) string {
+	costFail := maxCost > 0 && router.CostOf(a) > maxCost
+	latFail := maxLatency > 0 && router.LatencyOf(a) > maxLatency
+	switch {
+	case costFail && !latFail:
+		return "max_cost"
+	case latFail && !costFail:
+		return "max_latency"
+	default:
+		return "slo_filter"
+	}
 }

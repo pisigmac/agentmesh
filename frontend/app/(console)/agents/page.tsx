@@ -16,6 +16,9 @@ export default function AgentsPage() {
   const [selectedOrg, setSelectedOrg] = useState(getOrgId);
   const [capability, setCapability] = useState("");
   const [maxCost, setMaxCost] = useState("");
+  const [maxLatency, setMaxLatency] = useState("");
+  const [preferFree, setPreferFree] = useState(false);
+  const [preferLocal, setPreferLocal] = useState(false);
   const [selectedAgentId, setSelectedAgentId] = useState("");
   const [allAgents, setAllAgents] = useState<AgentEndpoint[]>([]);
   const [agents, setAgents] = useState<AgentEndpoint[]>([]);
@@ -33,6 +36,7 @@ export default function AgentsPage() {
     setError(null);
     try {
       const mc = maxCost ? parseFloat(maxCost) : undefined;
+      const ml = maxLatency ? parseFloat(maxLatency) : undefined;
       const org = selectedOrg || "default";
       const catalog = await discoverAgents(undefined, undefined, {
         orgId: org,
@@ -44,6 +48,9 @@ export default function AgentsPage() {
         orgId: org,
         limit: 256,
         includeUnhealthy: true,
+        maxLatencyMs: ml && ml > 0 ? ml : undefined,
+        preferFree,
+        preferLocal,
       });
       setAgents(filtered);
       if (selectedAgentId && !filtered.some((a) => a.agent_id === selectedAgentId)) {
@@ -56,7 +63,7 @@ export default function AgentsPage() {
     } finally {
       setLoading(false);
     }
-  }, [capability, maxCost, selectedOrg]);
+  }, [capability, maxCost, maxLatency, preferFree, preferLocal, selectedOrg]);
 
   useEffect(() => {
     load();
@@ -126,6 +133,23 @@ export default function AgentsPage() {
             <label htmlFor="cost">Max cost (USD)</label>
             <input id="cost" value={maxCost} onChange={(e) => setMaxCost(e.target.value)} placeholder="optional" />
           </div>
+          <div className="field" style={{ margin: 0 }}>
+            <label htmlFor="lat">Max latency (ms)</label>
+            <input
+              id="lat"
+              value={maxLatency}
+              onChange={(e) => setMaxLatency(e.target.value)}
+              placeholder="optional"
+            />
+          </div>
+          <label style={{ display: "flex", alignItems: "center", gap: "0.35rem", fontSize: "0.875rem" }}>
+            <input type="checkbox" checked={preferFree} onChange={(e) => setPreferFree(e.target.checked)} />
+            Prefer free
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: "0.35rem", fontSize: "0.875rem" }}>
+            <input type="checkbox" checked={preferLocal} onChange={(e) => setPreferLocal(e.target.checked)} />
+            Prefer local
+          </label>
           <button type="button" className="btn" onClick={load}>
             Refresh
           </button>

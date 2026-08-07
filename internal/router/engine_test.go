@@ -44,3 +44,41 @@ func TestFindAgent(t *testing.T) {
 		t.Fatalf("got %+v", got)
 	}
 }
+
+func TestRankFiltersMaxCostAndLatency(t *testing.T) {
+	e := NewEngine(NoopScoreProvider{})
+	var stats FilterStats
+	ranked := e.Rank(RankInput{
+		Capability:   "code_gen",
+		MaxCost:      0.01,
+		MaxLatencyMs: 100,
+		Strategy:     StrategyLeastCost,
+		Stats:        &stats,
+		Agents: []registry.AgentRecord{
+			{AgentID: "cheap-fast", Healthy: true, Capabilities: []string{"code_gen"}, CostPerReq: 0.005, LatencyEWMA: 40},
+			{AgentID: "expensive", Healthy: true, Capabilities: []string{"code_gen"}, CostPerReq: 0.05, LatencyEWMA: 40},
+			{AgentID: "slow", Healthy: true, Capabilities: []string{"code_gen"}, CostPerReq: 0.001, LatencyEWMA: 500},
+		},
+	})
+	if len(ranked) != 1 || ranked[0].Agent.AgentID != "cheap-fast" {
+		t.Fatalf("ranked=%+v stats=%+v", ranked, stats)
+	}
+	if stats.RejectedCost != 1 || stats.RejectedLatency != 1 {
+		t.Fatalf("stats=%+v", stats)
+	}
+}
+
+func TestPreferSLOFreeAndLocal(t *testing.T) {
+	ranked := []Ranked{
+		{Agent: registry.AgentRecord{AgentID: "cloud", CostPerReq: 0.02, EndpointURL: "https://api.example.com"}},
+		{Agent: registry.AgentRecord{AgentID: "local", CostPerReq: 0.02, EndpointURL: "http://127.0.0.1:9000"}},
+		{Agent: registry.AgentRecord{AgentID: "free", CostPerReq: 0, EndpointURL: "https://api.example.com"}},
+	}
+	out := PreferSLO(ranked, true, true)
+	if out[0].Agent.AgentID != "free" {
+		t.Fatalf("want free first, got %s", out[0].Agent.AgentID)
+	}
+	if out[1].Agent.AgentID != "local" {
+		t.Fatalf("want local second, got %s", out[1].Agent.AgentID)
+	}
+}

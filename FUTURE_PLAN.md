@@ -136,16 +136,9 @@ AgentMesh today provides:
 
 #### E7 — Cost / latency SLOs in policy
 
-**Problem:** Cost fields exist; few enforceable SLOs.
+**Shipped:** Org policy `max_cost_usd` / `max_latency_ms` / `prefer_free` / `prefer_local` (legacy `default_max_cost` still honored). Router hard-filters cost/latency before rank; soft-prefers free (`cost=0` or `metadata.tier=free`) and local (`localhost` / `metadata.local=true`). Applied on `RouteRequest` and discover (including `include_unhealthy` catalogs). Metric `agentmesh_route_slo_reject_total{org,reason}`. Policy UI SLO form + Agents discover filters (`max_latency_ms`, `prefer_free`, `prefer_local`).
 
-**Plan:**
-
-- Policy: `max_cost_usd`, `max_latency_ms`, `prefer_free` / `prefer_local`
-- Router filters before rank; metrics for SLO violations
-- UI policy editor fields + discover filter parity
-- Optional: daily org budget with soft/hard reject
-
-**Acceptance:** Route excludes over-budget agents; Prometheus counter for rejects.
+**Follow-ups:** daily org budget soft/hard reject; live `LatencyEWMA` writers from dataplane.
 
 #### E8 — Data plane failover that uses fallback_chain
 
@@ -250,7 +243,7 @@ Focus: demos that do not fall over; clear “required agent” story.
 |------:|------|---------|
 | 1 | E5 Native auth (JWT + org API keys) | **Shipped** — multi-tenant auth |
 | 2 | E3 follow-ups (Keymint audit UI) | **Shipped** — org-scoped audit on Models |
-| 3 | E7 Policy SLOs | Cost/latency guardrails |
+| 3 | E7 Policy SLOs | **Shipped** — cost/latency filters + metrics |
 | 4 | E9 Score-based path | Differentiated routing |
 | 5 | E11 Helm + metering slice | Deployable + billable |
 
@@ -355,7 +348,7 @@ E15–E20 as demand warrants; prefer customer pull over speculative build.
 ## 9. Immediate next actions
 
 1. Phase A core (pin, Keymint secrets, stream, health UX) is implemented; keep `21` / `22` / `23` current.
-2. Phase A complete; Keymint audit UI shipped. Next: design-partner dry-run of `docs/21-MANUAL-TESTING.md`; Phase B remainder (E7, E9, E11).
+2. Phase A + Keymint audit + E7 SLOs shipped. Next: design-partner dry-run of `docs/21-MANUAL-TESTING.md`; Phase B remainder (E9, E11).
 3. Run design-partner demo script from updated `21-MANUAL-TESTING.md`.
 4. Revisit positioning website copy: **mesh first**, inference second.
 

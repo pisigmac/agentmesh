@@ -371,6 +371,21 @@ paths:
           in: query
           schema:
             type: number
+        - name: max_latency_ms
+          in: query
+          description: Drop agents with estimated_latency_ms above this value
+          schema:
+            type: number
+        - name: prefer_free
+          in: query
+          description: Soft-prefer zero-cost agents (`1`/`true`)
+          schema:
+            type: string
+        - name: prefer_local
+          in: query
+          description: Soft-prefer localhost / loopback endpoints (`1`/`true`)
+          schema:
+            type: string
         - name: limit
           in: query
           schema:

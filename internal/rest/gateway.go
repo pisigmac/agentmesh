@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -166,6 +167,14 @@ func (g *Gateway) discoverAgents(w http.ResponseWriter, r *http.Request) {
 			q.MaxCost = f
 		}
 	}
+	var maxLatencyOverride float64
+	if ml := r.URL.Query().Get("max_latency_ms"); ml != "" {
+		if f, err := strconv.ParseFloat(ml, 64); err == nil && f > 0 {
+			maxLatencyOverride = f
+		}
+	}
+	preferFreeQ := queryBool(r, "prefer_free")
+	preferLocalQ := queryBool(r, "prefer_local")
 	if lim := r.URL.Query().Get("limit"); lim != "" {
 		if n, err := strconv.Atoi(lim); err == nil && n > 0 {
 			q.Limit = int32(n)
@@ -193,6 +202,9 @@ func (g *Gateway) discoverAgents(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			break
 		}
+		if maxLatencyOverride > 0 && ep.GetEstimatedLatencyMs() > maxLatencyOverride {
+			continue
+		}
 		endpoints = append(endpoints, map[string]any{
 			"agent_id":             ep.GetAgentId(),
 			"agent_type":           ep.GetAgentType(),
@@ -207,7 +219,36 @@ func (g *Gateway) discoverAgents(w http.ResponseWriter, r *http.Request) {
 			"persistent":           ep.GetPersistent(),
 		})
 	}
+	if preferFreeQ || preferLocalQ {
+		sort.SliceStable(endpoints, func(i, j int) bool {
+			return discoverPreferScore(endpoints[i], preferFreeQ, preferLocalQ) >
+				discoverPreferScore(endpoints[j], preferFreeQ, preferLocalQ)
+		})
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"agents": endpoints})
+}
+
+func queryBool(r *http.Request, key string) bool {
+	v := strings.ToLower(strings.TrimSpace(r.URL.Query().Get(key)))
+	return v == "1" || v == "true" || v == "yes"
+}
+
+func discoverPreferScore(ep map[string]any, preferFree, preferLocal bool) int {
+	n := 0
+	if preferFree {
+		cost, _ := ep["cost_score"].(float64)
+		if cost == 0 {
+			n += 2
+		}
+	}
+	if preferLocal {
+		url, _ := ep["endpoint_url"].(string)
+		low := strings.ToLower(url)
+		if strings.Contains(low, "127.0.0.1") || strings.Contains(low, "localhost") || strings.Contains(low, "[::1]") {
+			n++
+		}
+	}
+	return n
 }
 
 func (g *Gateway) reportHealth(w http.ResponseWriter, r *http.Request) {
