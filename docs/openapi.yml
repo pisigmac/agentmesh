@@ -163,6 +163,44 @@ components:
         pin_failover:
           type: boolean
           description: If pinned agent circuit is open, fall back to normal ranking
+    ChatRequest:
+      type: object
+      required:
+        - model
+      properties:
+        model:
+          type: string
+          description: Catalog model id from GET /v1/models
+        question:
+          type: string
+        system:
+          type: string
+        messages:
+          type: array
+          items:
+            type: object
+            properties:
+              role:
+                type: string
+              content:
+                type: string
+        route_via_mesh:
+          type: boolean
+          description: When true (default), call RouteRequest before inference
+        source_agent_id:
+          type: string
+        destination_agent_id:
+          type: string
+          description: Hard-pin destination agent when routing via mesh
+        prefer_agent_ids:
+          type: array
+          items:
+            type: string
+          description: Soft preference list for mesh routing
+        force_pin:
+          type: boolean
+        pin_failover:
+          type: boolean
     RouteResponse:
       type: object
       properties:
@@ -366,6 +404,12 @@ paths:
             example:
               capability: code_gen
               routing_strategy: least-latency
+              destination_agent_id: cursor-1
+              prefer_agent_ids:
+                - cursor-1
+                - claude-1
+              force_pin: false
+              pin_failover: true
       responses:
         '200':
           description: Routing decision
@@ -434,33 +478,14 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [model]
-              properties:
-                model:
-                  type: string
-                question:
-                  type: string
-                system:
-                  type: string
-                messages:
-                  type: array
-                  items:
-                    type: object
-                route_via_mesh:
-                  type: boolean
-                source_agent_id:
-                  type: string
-                destination_agent_id:
-                  type: string
-                prefer_agent_ids:
-                  type: array
-                  items:
-                    type: string
-                force_pin:
-                  type: boolean
-                pin_failover:
-                  type: boolean
+              $ref: '#/components/schemas/ChatRequest'
+            example:
+              model: gpt-4o-mini
+              question: Explain Go context cancellation
+              route_via_mesh: true
+              destination_agent_id: openai-chat-1
+              force_pin: false
+              pin_failover: true
       responses:
         '200':
           description: Chat result
@@ -472,32 +497,13 @@ paths:
       summary: SSE streaming chat via Keymint proxy
       description: |
         Events: `meta`, `token`, `done`, `error` (text/event-stream).
+        Pin fields match `/v1/chat` and are passed to `RouteRequest` when `route_via_mesh` is true.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required: [model]
-              properties:
-                model:
-                  type: string
-                question:
-                  type: string
-                system:
-                  type: string
-                messages:
-                  type: array
-                  items:
-                    type: object
-                route_via_mesh:
-                  type: boolean
-                destination_agent_id:
-                  type: string
-                force_pin:
-                  type: boolean
-                pin_failover:
-                  type: boolean
+              $ref: '#/components/schemas/ChatRequest'
       responses:
         '200':
           description: SSE stream

@@ -71,6 +71,8 @@ Query params: `capability`, `routing_strategy`, `max_cost`, `limit`, `org_id`, `
 
 Inference via Keymint proxy. See [23-MODEL-INFERENCE.md](23-MODEL-INFERENCE.md). Stream uses SSE (`meta` / `token` / `done` / `error`).
 
+Chat body pin fields (passed to `RouteRequest` when `route_via_mesh` is true): `destination_agent_id`, `prefer_agent_ids`, `force_pin`, `pin_failover`, plus `source_agent_id`. OpenAPI schema: `ChatRequest`.
+
 ## GET /v1/circuit/{agent_id}
 
 Returns circuit breaker state for destination agent in the authenticated org.

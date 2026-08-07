@@ -19,6 +19,7 @@ export default function ChatPage() {
   const [system, setSystem] = useState("You are a helpful engineering assistant.");
   const [routeViaMesh, setRouteViaMesh] = useState(true);
   const [destination, setDestination] = useState("");
+  const [prefer, setPrefer] = useState("");
   const [forcePin, setForcePin] = useState(false);
   const [pinFailover, setPinFailover] = useState(false);
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -61,6 +62,10 @@ export default function ChatPage() {
     abortRef.current = ac;
     let assistant = "";
     try {
+      const preferIds = prefer
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
       await chatCompletionStream(
         {
           model,
@@ -69,6 +74,7 @@ export default function ChatPage() {
           route_via_mesh: routeViaMesh,
           source_agent_id: "console-chat",
           destination_agent_id: destination.trim() || undefined,
+          prefer_agent_ids: preferIds.length ? preferIds : undefined,
           force_pin: forcePin || undefined,
           pin_failover: pinFailover || undefined,
         },
@@ -157,18 +163,34 @@ export default function ChatPage() {
             Route via mesh ({selected?.capability ?? "—"})
           </label>
         </div>
-        <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", marginTop: "0.75rem" }}>
+        <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", marginTop: "0.75rem", alignItems: "flex-end" }}>
           <div className="field" style={{ margin: 0, minWidth: "220px" }}>
             <label htmlFor="pin">Pin agent ID</label>
             <input
               id="pin"
               value={destination}
               onChange={(e) => setDestination(e.target.value)}
-              placeholder="optional"
+              placeholder="optional hard pin"
+              disabled={!routeViaMesh}
+            />
+          </div>
+          <div className="field" style={{ margin: 0, minWidth: "240px" }}>
+            <label htmlFor="prefer">Prefer agent IDs</label>
+            <input
+              id="prefer"
+              value={prefer}
+              onChange={(e) => setPrefer(e.target.value)}
+              placeholder="comma-separated soft preference"
+              disabled={!routeViaMesh}
             />
           </div>
           <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", fontSize: "0.875rem" }}>
-            <input type="checkbox" checked={forcePin} onChange={(e) => setForcePin(e.target.checked)} />
+            <input
+              type="checkbox"
+              checked={forcePin}
+              onChange={(e) => setForcePin(e.target.checked)}
+              disabled={!routeViaMesh}
+            />
             Force pin
           </label>
           <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", fontSize: "0.875rem" }}>
@@ -176,6 +198,7 @@ export default function ChatPage() {
               type="checkbox"
               checked={pinFailover}
               onChange={(e) => setPinFailover(e.target.checked)}
+              disabled={!routeViaMesh}
             />
             Pin failover
           </label>
