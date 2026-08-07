@@ -166,12 +166,9 @@ AgentMesh today provides:
 
 #### E11 — Multi-tenant SaaS and Helm completeness
 
-**Plan:**
+**Shipped (MVP slice):** Helm templates for CP, DP, and frontend with ClusterIP Services, PDB + gated HPA, dual ServiceMonitors; staging overlay `values-staging.yaml`. Successful `RouteRequest` writes ClickHouse `billing_events` and posts Stripe Billing Meter Events when `STRIPE_ENABLED` + customer map are set (`internal/billing`). REST enforces principal org on body/query/`/orgs/{org}/keys*` (workspace alias = org; conflicting headers rejected). See `ops/01-PAYMENTS.md` and `ops/08-STAGING.md`.
 
-- Separate Helm charts/templates for CP, DP, frontend; HPA/PDB/ServiceMonitor solid
-- Workspace = org alias fully enforced on all `/v1/*`
-- Stripe usage from ClickHouse `billing_events` (see `ops/01-PAYMENTS.md`)
-- Staging env runbook (`ops/08-STAGING.md`) kept current
+**Follow-ups:** true multi-chart repo split; Stripe webhooks/dunning; dataplane auth.
 
 #### E12 — MCP and tool surface
 
@@ -236,7 +233,7 @@ Focus: demos that do not fall over; clear “required agent” story.
 | 2 | E3 follow-ups (Keymint audit UI) | **Shipped** — org-scoped audit on Models |
 | 3 | E7 Policy SLOs | **Shipped** — cost/latency filters + metrics |
 | 4 | E9 Score-based path | **Shipped** — fixture/GuardLoop + UI scores |
-| 5 | E11 Helm + metering slice | Deployable + billable |
+| 5 | E11 Helm + metering slice | **Shipped** — Helm Services/frontend + billing_events |
 
 **Exit criteria:** Two orgs isolated; staging Helm install; usage events flowing.
 
@@ -339,7 +336,7 @@ E15–E20 as demand warrants; prefer customer pull over speculative build.
 ## 9. Immediate next actions
 
 1. Phase A core (pin, Keymint secrets, stream, health UX) is implemented; keep `21` / `22` / `23` current.
-2. Phase A + Keymint audit + E7 + E9 shipped. Next: design-partner dry-run of `docs/21-MANUAL-TESTING.md`; Phase B remainder (E11 Helm/metering).
+2. Phase A + Phase B (auth, audit, E7, E9, E11) shipped. Next: design-partner dry-run of `docs/21-MANUAL-TESTING.md`; Phase C (SDKs / MCP) as demand warrants.
 3. Run design-partner demo script from updated `21-MANUAL-TESTING.md`.
 4. Revisit positioning website copy: **mesh first**, inference second.
 

@@ -1,0 +1,35 @@
+{{- if .Values.frontend.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "agentmesh.fullname" . }}-frontend
+spec:
+  replicas: {{ .Values.frontend.replicas }}
+  selector:
+    matchLabels:
+      app: agentmesh-frontend
+  template:
+    metadata:
+      labels:
+        app: agentmesh-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: {{ .Values.frontend.image }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.frontend.httpPort }}
+          env:
+            - name: PORT
+              value: "{{ .Values.frontend.httpPort }}"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+{{- end }}

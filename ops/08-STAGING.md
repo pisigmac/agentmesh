@@ -35,10 +35,22 @@ Refresh weekly from anonymized fixture scripts.
 ## Deploy pipeline
 
 1. CI runs `make test` + `verify-openapi`
-2. Build images tagged `0.1.0-rc.*`
-3. Helm upgrade staging with `--wait`
-4. Run `tests/load/smoke.sh` against staging URL
-5. Manual sign-off for prod promote
+2. Build images tagged `0.1.0-rc.*` (control-plane, dataplane, frontend)
+3. Ensure Secret `agentmesh-stripe` exists (`secret_key`) when metering is on
+4. Helm upgrade:
+
+```bash
+helm upgrade --install agentmesh ./deploy/helm/agentmesh \
+  -n agentmesh-staging --create-namespace \
+  -f deploy/helm/agentmesh/values.yaml \
+  -f deploy/helm/agentmesh/values-staging.yaml \
+  --wait
+```
+
+5. Confirm Services: `agentmesh-control-plane`, `agentmesh-dataplane`, `agentmesh-frontend`
+6. Run `tests/load/smoke.sh` against staging URL
+7. Metering smoke: `POST /v1/route` → row in `billing_events`; Stripe test meter increments when `STRIPE_ORG_CUSTOMERS` is set
+8. Manual sign-off for prod promote
 
 ## Feature flags
 

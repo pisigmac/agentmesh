@@ -1,42 +1,49 @@
 # Payments runbook
 
-Stripe integration lives in `internal/billing/stripe.go`. Billing events are recorded in ClickHouse `billing_events` for reconciliation.
+Stripe integration lives in `internal/billing`. Successful control-plane routes insert ClickHouse `billing_events` and optionally post Stripe Billing Meter Events.
 
 ## Prerequisites
 
-- Stripe account with metered products configured (see [17-PRICING.md](../docs/17-PRICING.md))
-- Webhook signing secret in Kubernetes Secret `agentmesh-stripe`
-- Org IDs match Stripe customer metadata `agentmesh_org_id`
+- Stripe account with a Billing Meter (default event name `agentmesh_routes`) — see [17-PRICING.md](../docs/17-PRICING.md)
+- Secret `agentmesh-stripe` with key `secret_key` (`sk_test_…` for staging)
+- Org → customer map: `STRIPE_ORG_CUSTOMERS=acme:cus_xxx,beta:cus_yyy` (also Stripe customer metadata `agentmesh_org_id`)
 
 ## Event flow
 
-1. Route or seat event emitted internally
-2. Row inserted into `billing_events` with `stripe_event_id` for idempotency
-3. Worker posts usage records to Stripe API
-4. Invoice generated on billing cycle
+1. Client calls `POST /v1/route` (or gRPC `RouteRequest`) successfully
+2. Control plane inserts `billing_events` with `event_type=route`, `quantity=1`, `stripe_event_id=route:{trace_id}`
+3. If `STRIPE_ENABLED=true` and the org has a mapped customer, posts `POST /v1/billing/meter_events` with the same identifier
+4. Stripe invoices on the meter’s billing cycle
+
+## Configuration
+
+| Env | Purpose |
+|-----|---------|
+| `STRIPE_ENABLED` | Master switch |
+| `STRIPE_SECRET_KEY` | API key |
+| `STRIPE_METER_EVENT_NAME` | Meter event name (default `agentmesh_routes`) |
+| `STRIPE_ORG_CUSTOMERS` | `org:cus_…` CSV map |
+
+Helm: `stripe.enabled`, `stripe.secretKeyExistingSecret`, `stripe.orgCustomers` in [`deploy/helm/agentmesh/values.yaml`](../deploy/helm/agentmesh/values.yaml).
 
 ## Idempotency
 
-Always set `stripe_event_id` unique per logical event. Retries must reuse the same ID to avoid double billing.
+Always set `stripe_event_id` / Stripe `identifier` to `route:{trace_id}`. Retries must reuse the same ID to avoid double billing.
 
-## Failed webhooks
+## Failed Stripe posts
 
 | Symptom | Action |
 |---------|--------|
-| 400 signature | Rotate webhook secret, update Secret |
-| 500 handler | Check logs, replay from Stripe dashboard |
-| Duplicate charge | Query CH for duplicate `stripe_event_id` |
+| No customer mapping | CH row still written; add org to `STRIPE_ORG_CUSTOMERS` |
+| 401/403 from Stripe | Rotate `secret_key` in Secret |
+| 400 invalid meter | Align `STRIPE_METER_EVENT_NAME` with dashboard meter |
+
+Webhook handlers / dunning are follow-ups (not in this MVP).
 
 ## Manual credit
 
 1. Issue Stripe credit note tied to customer
 2. Insert adjusting row in `billing_events` with negative `quantity`
-
-## Dunning
-
-- Day 0: payment failed email (see [06-EMAIL.md](06-EMAIL.md))
-- Day 3: throttle org to 5 RPS rate limit
-- Day 7: suspend API keys except read-only discover
 
 ## Reconciliation query
 

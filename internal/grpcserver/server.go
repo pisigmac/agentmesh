@@ -7,6 +7,7 @@ import (
 	"time"
 
 	agentmeshv1 "github.com/agentmesh/agentmesh/gen/agentmesh/v1"
+	"github.com/agentmesh/agentmesh/internal/billing"
 	"github.com/agentmesh/agentmesh/internal/circuit"
 	"github.com/agentmesh/agentmesh/internal/config"
 	"github.com/agentmesh/agentmesh/internal/policy"
@@ -26,11 +27,12 @@ type Server struct {
 	engine   *router.Engine
 	breaker  *circuit.Breaker
 	limiter  *ratelimit.Limiter
+	meter    *billing.Meter
 	cfg      config.Config
 }
 
-func New(reg *registry.Store, policies *policy.Store, engine *router.Engine, breaker *circuit.Breaker, limiter *ratelimit.Limiter, cfg config.Config) *Server {
-	return &Server{reg: reg, policies: policies, engine: engine, breaker: breaker, limiter: limiter, cfg: cfg}
+func New(reg *registry.Store, policies *policy.Store, engine *router.Engine, breaker *circuit.Breaker, limiter *ratelimit.Limiter, cfg config.Config, meter *billing.Meter) *Server {
+	return &Server{reg: reg, policies: policies, engine: engine, breaker: breaker, limiter: limiter, meter: meter, cfg: cfg}
 }
 
 func (s *Server) RegisterAgent(ctx context.Context, req *agentmeshv1.AgentRegistration) (*agentmeshv1.RegistrationAck, error) {
@@ -296,6 +298,9 @@ func (s *Server) RouteRequest(ctx context.Context, req *agentmeshv1.RoutePayload
 	}
 	timeout := pol.Routing.DefaultTimeoutMs
 	retries := pol.Routing.DefaultMaxRetries
+	if s.meter != nil {
+		_ = s.meter.RecordRouteUsage(ctx, req.GetOrgId(), traceID, 1)
+	}
 	return &agentmeshv1.RouteResponse{
 		DestinationAgentId:   chosen.Agent.AgentID,
 		DestinationAgentType: chosen.Agent.AgentType,

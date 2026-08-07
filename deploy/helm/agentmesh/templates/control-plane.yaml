@@ -3,7 +3,9 @@ kind: Deployment
 metadata:
   name: {{ include "agentmesh.fullname" . }}-control-plane
 spec:
+  {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
+  {{- end }}
   selector:
     matchLabels:
       app: agentmesh-control-plane
@@ -16,8 +18,10 @@ spec:
         - name: control-plane
           image: {{ .Values.controlPlane.image }}
           ports:
-            - containerPort: {{ .Values.controlPlane.httpPort }}
-            - containerPort: {{ .Values.controlPlane.grpcPort }}
+            - name: http
+              containerPort: {{ .Values.controlPlane.httpPort }}
+            - name: grpc
+              containerPort: {{ .Values.controlPlane.grpcPort }}
           env:
             - name: ETCD_ENDPOINTS
               value: {{ join "," .Values.etcd.endpoints | quote }}
@@ -27,14 +31,45 @@ spec:
               value: {{ .Values.clickhouse.addr | quote }}
             - name: CLICKHOUSE_DATABASE
               value: {{ .Values.clickhouse.database | quote }}
+            - name: SCORE_PROVIDER
+              value: {{ .Values.score.provider | quote }}
+            - name: GUARDLOOP_ENABLED
+              value: {{ .Values.guardloop.enabled | quote }}
+            {{- if .Values.guardloop.baseUrl }}
+            - name: GUARDLOOP_BASE_URL
+              value: {{ .Values.guardloop.baseUrl | quote }}
+            {{- end }}
+            - name: STRIPE_ENABLED
+              value: {{ .Values.stripe.enabled | quote }}
+            {{- if .Values.stripe.meterEventName }}
+            - name: STRIPE_METER_EVENT_NAME
+              value: {{ .Values.stripe.meterEventName | quote }}
+            {{- end }}
+            {{- if .Values.stripe.orgCustomers }}
+            - name: STRIPE_ORG_CUSTOMERS
+              value: {{ .Values.stripe.orgCustomers | quote }}
+            {{- end }}
+            {{- if .Values.stripe.secretKeyExistingSecret }}
+            - name: STRIPE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.stripe.secretKeyExistingSecret }}
+                  key: secret_key
+            {{- end }}
+            - name: TRACELENS_ENABLED
+              value: {{ .Values.tracelens.enabled | quote }}
+            - name: TRACELENS_OTLP_ENDPOINT
+              value: {{ .Values.tracelens.otlpEndpoint | quote }}
           livenessProbe:
             httpGet:
               path: /health
-              port: {{ .Values.controlPlane.httpPort }}
+              port: http
           readinessProbe:
             httpGet:
               path: /ready
-              port: {{ .Values.controlPlane.httpPort }}
+              port: http
+          resources:
+            {{- toYaml .Values.controlPlane.resources | nindent 12 }}
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget

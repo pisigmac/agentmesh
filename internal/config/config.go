@@ -23,6 +23,15 @@ type Config struct {
 	Score        ScoreProviderConfig
 	TraceLens    TraceLensConfig
 	Circuit      CircuitConfig
+	Stripe       StripeConfig
+}
+
+type StripeConfig struct {
+	Enabled        bool
+	SecretKey      string
+	WebhookSecret  string
+	MeterEventName string
+	OrgCustomers   string // "org:cus_xxx,org2:cus_yyy"
 }
 
 type ControlPlaneConfig struct {
@@ -178,6 +187,13 @@ func Load() Config {
 			FailureThreshold: getenvInt("CIRCUIT_FAILURE_THRESHOLD", 5),
 			WindowSeconds:    getenvInt("CIRCUIT_WINDOW_SECONDS", 60),
 			HalfOpenSeconds:  getenvInt("CIRCUIT_HALF_OPEN_SECONDS", 30),
+		},
+		Stripe: StripeConfig{
+			Enabled:        getenvBool("STRIPE_ENABLED", false),
+			SecretKey:      getenv("STRIPE_SECRET_KEY", ""),
+			WebhookSecret:  getenv("STRIPE_WEBHOOK_SECRET", ""),
+			MeterEventName: getenv("STRIPE_METER_EVENT_NAME", "agentmesh_routes"),
+			OrgCustomers:   getenv("STRIPE_ORG_CUSTOMERS", ""),
 		},
 	}
 }

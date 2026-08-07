@@ -1,7 +1,10 @@
+{{- if .Values.serviceMonitor.enabled }}
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: {{ include "agentmesh.fullname" . }}
+  name: {{ include "agentmesh.fullname" . }}-control-plane
+  labels:
+    app: agentmesh-control-plane
 spec:
   selector:
     matchLabels:
@@ -9,3 +12,20 @@ spec:
   endpoints:
     - port: http
       path: /metrics
+      interval: {{ .Values.serviceMonitor.interval }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "agentmesh.fullname" . }}-dataplane
+  labels:
+    app: agentmesh-dataplane
+spec:
+  selector:
+    matchLabels:
+      app: agentmesh-dataplane
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.serviceMonitor.interval }}
+{{- end }}

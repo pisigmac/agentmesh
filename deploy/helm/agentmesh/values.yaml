@@ -4,11 +4,21 @@ controlPlane:
   image: agentmesh/control-plane:0.1.0
   grpcPort: 9090
   httpPort: 8080
+  resources: {}
 
 dataPlane:
   image: agentmesh/dataplane:0.1.0
   httpPort: 8081
   mode: gateway
+  replicas: 1
+  failover: true
+  resources: {}
+
+frontend:
+  enabled: true
+  image: agentmesh/frontend:0.1.0
+  httpPort: 3000
+  replicas: 1
 
 etcd:
   endpoints:
@@ -30,9 +40,25 @@ autoscaling:
 pdb:
   minAvailable: 1
 
+serviceMonitor:
+  enabled: true
+  interval: 30s
+
 tracelens:
   enabled: true
   otlpEndpoint: http://tracelens-collector:8080/v1/traces
 
 guardloop:
   enabled: false
+  baseUrl: ""
+
+score:
+  provider: auto
+
+stripe:
+  enabled: false
+  meterEventName: agentmesh_routes
+  # Existing Secret with key secret_key (sk_test_… / sk_live_…)
+  secretKeyExistingSecret: ""
+  # Optional: org_id:cus_xxx,org2:cus_yyy
+  orgCustomers: ""

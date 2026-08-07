@@ -13,6 +13,7 @@ import (
 	agentmeshv1 "github.com/agentmesh/agentmesh/gen/agentmesh/v1"
 	"github.com/agentmesh/agentmesh/internal/analytics"
 	"github.com/agentmesh/agentmesh/internal/auth"
+	"github.com/agentmesh/agentmesh/internal/billing"
 	"github.com/agentmesh/agentmesh/internal/circuit"
 	"github.com/agentmesh/agentmesh/internal/config"
 	"github.com/agentmesh/agentmesh/internal/grpcserver"
@@ -72,8 +73,25 @@ func main() {
 		HalfOpenSeconds:  cfg.Circuit.HalfOpenSeconds,
 	})
 
-	if _, err := analytics.NewStore(ctx, cfg.ClickHouse); err != nil {
+	var chStore *analytics.Store
+	if s, err := analytics.NewStore(ctx, cfg.ClickHouse); err != nil {
 		log.Warn("clickhouse unavailable", zap.Error(err))
+	} else {
+		chStore = s
+		defer chStore.Close()
+	}
+	meter := &billing.Meter{
+		CH: chStore,
+		Stripe: billing.StripeHooks{
+			Enabled:        cfg.Stripe.Enabled,
+			SecretKey:      cfg.Stripe.SecretKey,
+			WebhookSecret:  cfg.Stripe.WebhookSecret,
+			MeterEventName: cfg.Stripe.MeterEventName,
+			OrgCustomers:   billing.ParseOrgCustomers(cfg.Stripe.OrgCustomers),
+		},
+	}
+	if cfg.Stripe.Enabled {
+		log.Info("stripe metering enabled", zap.String("meter", cfg.Stripe.MeterEventName))
 	}
 
 	policies, err := policy.NewStore(cfg.Etcd.Endpoints, cfg.Etcd.Prefix, cfg)
@@ -126,7 +144,7 @@ func main() {
 	}
 	log.Info("models catalog loaded", zap.String("path", catalog.Path()), zap.Int("models", len(catalog.Models())), zap.Int("providers", len(catalog.Providers())))
 
-	srv := grpcserver.New(reg, policies, engine, br, limiter, cfg)
+	srv := grpcserver.New(reg, policies, engine, br, limiter, cfg, meter)
 
 	grpcServer := grpc.NewServer()
 	agentmeshv1.RegisterAgentMeshServer(grpcServer, srv)

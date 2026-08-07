@@ -3,7 +3,9 @@ kind: Deployment
 metadata:
   name: {{ include "agentmesh.fullname" . }}-dataplane
 spec:
-  replicas: {{ .Values.autoscaling.minReplicas }}
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.dataPlane.replicas | default 1 }}
+  {{- end }}
   selector:
     matchLabels:
       app: agentmesh-dataplane
@@ -16,17 +18,47 @@ spec:
         - name: dataplane
           image: {{ .Values.dataPlane.image }}
           ports:
-            - containerPort: {{ .Values.dataPlane.httpPort }}
+            - name: http
+              containerPort: {{ .Values.dataPlane.httpPort }}
           env:
             - name: CONTROL_PLANE_ADDR
               value: "{{ include "agentmesh.fullname" . }}-control-plane:{{ .Values.controlPlane.grpcPort }}"
             - name: DATAPLANE_HTTP_PORT
               value: "{{ .Values.dataPlane.httpPort }}"
+            - name: DATAPLANE_FAILOVER
+              value: "{{ .Values.dataPlane.failover }}"
+            - name: REDIS_ADDR
+              value: {{ .Values.redis.addr | quote }}
+            - name: CLICKHOUSE_ADDR
+              value: {{ .Values.clickhouse.addr | quote }}
+            - name: CLICKHOUSE_DATABASE
+              value: {{ .Values.clickhouse.database | quote }}
             - name: TRACELENS_ENABLED
               value: "{{ .Values.tracelens.enabled }}"
             - name: TRACELENS_OTLP_ENDPOINT
               value: {{ .Values.tracelens.otlpEndpoint | quote }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+          resources:
+            {{- toYaml .Values.dataPlane.resources | nindent 12 }}
 ---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "agentmesh.fullname" . }}-dataplane
+spec:
+  minAvailable: {{ .Values.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      app: agentmesh-dataplane
+---
+{{- if .Values.autoscaling.enabled }}
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -45,3 +77,4 @@ spec:
         target:
           type: Utilization
           averageUtilization: {{ .Values.autoscaling.targetCPUUtilizationPercentage }}
+{{- end }}

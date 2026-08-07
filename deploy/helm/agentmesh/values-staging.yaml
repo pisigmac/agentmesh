@@ -1,0 +1,41 @@
+# Staging overlay — use with:
+#   helm upgrade --install agentmesh ./deploy/helm/agentmesh -n agentmesh-staging -f values.yaml -f values-staging.yaml
+replicaCount: 2
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+
+dataPlane:
+  replicas: 1
+  failover: true
+
+frontend:
+  enabled: true
+  replicas: 1
+
+pdb:
+  minAvailable: 1
+
+serviceMonitor:
+  enabled: true
+  interval: 30s
+
+guardloop:
+  enabled: false
+  baseUrl: ""
+
+score:
+  provider: fixture
+
+stripe:
+  enabled: true
+  meterEventName: agentmesh_routes
+  secretKeyExistingSecret: agentmesh-stripe
+  # Fill per staging org after creating Stripe test customers
+  orgCustomers: ""
+
+tracelens:
+  enabled: true

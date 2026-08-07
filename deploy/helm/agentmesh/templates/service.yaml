@@ -1,0 +1,49 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "agentmesh.fullname" . }}-control-plane
+  labels:
+    app: agentmesh-control-plane
+spec:
+  type: ClusterIP
+  selector:
+    app: agentmesh-control-plane
+  ports:
+    - name: http
+      port: {{ .Values.controlPlane.httpPort }}
+      targetPort: {{ .Values.controlPlane.httpPort }}
+    - name: grpc
+      port: {{ .Values.controlPlane.grpcPort }}
+      targetPort: {{ .Values.controlPlane.grpcPort }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "agentmesh.fullname" . }}-dataplane
+  labels:
+    app: agentmesh-dataplane
+spec:
+  type: ClusterIP
+  selector:
+    app: agentmesh-dataplane
+  ports:
+    - name: http
+      port: {{ .Values.dataPlane.httpPort }}
+      targetPort: {{ .Values.dataPlane.httpPort }}
+{{- if .Values.frontend.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "agentmesh.fullname" . }}-frontend
+  labels:
+    app: agentmesh-frontend
+spec:
+  type: ClusterIP
+  selector:
+    app: agentmesh-frontend
+  ports:
+    - name: http
+      port: {{ .Values.frontend.httpPort }}
+      targetPort: {{ .Values.frontend.httpPort }}
+{{- end }}

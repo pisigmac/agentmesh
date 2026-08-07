@@ -133,15 +133,29 @@ func orgFromCtx(r *http.Request) string {
 	return "default"
 }
 
+// enforceOrg locks body/query org to the authenticated principal org.
+func enforceOrg(w http.ResponseWriter, r *http.Request, requested string) (string, bool) {
+	principal := orgFromCtx(r)
+	requested = strings.TrimSpace(requested)
+	if requested == "" || requested == principal {
+		return principal, true
+	}
+	writeJSON(w, http.StatusForbidden, errBody("ORG_MISMATCH",
+		"org_id must match authenticated X-Org-ID / X-Workspace-ID ("+principal+")"))
+	return "", false
+}
+
 func (g *Gateway) registerAgent(w http.ResponseWriter, r *http.Request) {
 	var body agentmeshv1.AgentRegistration
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, errBody("INVALID_JSON", err.Error()))
 		return
 	}
-	if body.OrgId == "" {
-		body.OrgId = orgFromCtx(r)
+	org, ok := enforceOrg(w, r, body.OrgId)
+	if !ok {
+		return
 	}
+	body.OrgId = org
 	client, conn, err := g.dial(r.Context())
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errBody("INTERNAL", err.Error()))
@@ -181,7 +195,11 @@ func (g *Gateway) discoverAgents(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if orgQ := strings.TrimSpace(r.URL.Query().Get("org_id")); orgQ != "" {
-		q.OrgId = orgQ
+		org, ok := enforceOrg(w, r, orgQ)
+		if !ok {
+			return
+		}
+		q.OrgId = org
 	}
 	iu := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("include_unhealthy")))
 	q.IncludeUnhealthy = iu == "1" || iu == "true" || iu == "yes"
@@ -288,9 +306,11 @@ func (g *Gateway) route(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, errBody("INVALID_JSON", err.Error()))
 		return
 	}
-	if body.OrgId == "" {
-		body.OrgId = orgFromCtx(r)
+	org, ok := enforceOrg(w, r, body.OrgId)
+	if !ok {
+		return
 	}
+	body.OrgId = org
 	client, conn, err := g.dial(r.Context())
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errBody("INTERNAL", err.Error()))

@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"fmt"
 	"strings"
 )
 
@@ -47,6 +48,11 @@ func ParseBearer(authHeader string) (string, error) {
 }
 
 func OrgFromHeaders(orgID, workspaceID string) (string, error) {
+	orgID = strings.TrimSpace(orgID)
+	workspaceID = strings.TrimSpace(workspaceID)
+	if orgID != "" && workspaceID != "" && orgID != workspaceID {
+		return "", fmt.Errorf("%w: X-Org-ID and X-Workspace-ID conflict", ErrInvalidOrgID)
+	}
 	id := orgID
 	if id == "" {
 		id = workspaceID

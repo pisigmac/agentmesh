@@ -114,14 +114,26 @@ Staging: set `GUARDLOOP_ENABLED=true`, `SCORE_PROVIDER=guardloop` (or `auto`), a
 | `CIRCUIT_WINDOW_SECONDS` | `60` | Sliding window |
 | `CIRCUIT_HALF_OPEN_SECONDS` | `30` | Time until half-open probe |
 
+## Stripe metering (optional)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `STRIPE_ENABLED` | `false` | Post meter events after successful routes |
+| `STRIPE_SECRET_KEY` | `` | `sk_test_…` / `sk_live_…` |
+| `STRIPE_METER_EVENT_NAME` | `agentmesh_routes` | Stripe Billing Meter event name |
+| `STRIPE_ORG_CUSTOMERS` | `` | `org_id:cus_xxx,org2:cus_yyy` map |
+| `STRIPE_WEBHOOK_SECRET` | `` | Reserved for webhook verification |
+
+Every successful control-plane route inserts ClickHouse `billing_events` (idempotent `stripe_event_id=route:{trace_id}`) and, when enabled + customer mapped, calls Stripe `POST /v1/billing/meter_events`. See [ops/01-PAYMENTS.md](../ops/01-PAYMENTS.md).
+
 ## Feature flags
 
 Any `FF_<NAME>` env var read by `internal/featureflags` (values `1`, `true` enable).
 
 ## Helm
 
-Chart values in `deploy/helm/agentmesh/values.yaml` map to the same settings via container `env` blocks—override per environment with `-f` values files.
+Chart: [`deploy/helm/agentmesh`](../deploy/helm/agentmesh). Templates cover control-plane, dataplane, frontend, Services, PDB/HPA, ServiceMonitors. Staging: `-f values.yaml -f values-staging.yaml`. Map Stripe secret via `stripe.secretKeyExistingSecret=agentmesh-stripe` (key `secret_key`).
 
 ## Secrets handling
 
-Never commit `.env` files with production keys. Use Kubernetes Secrets for `TRACELENS_JWT`, `GUARDLOOP_API_KEY`, Redis password, and ClickHouse credentials.
+Never commit `.env` files with production keys. Use Kubernetes Secrets for `TRACELENS_JWT`, `GUARDLOOP_API_KEY`, `STRIPE_SECRET_KEY`, Redis password, and ClickHouse credentials.

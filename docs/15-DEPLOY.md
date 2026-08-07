@@ -30,10 +30,28 @@ docker build -f deploy/Dockerfile.dataplane -t agentmesh/dataplane:0.1.0 .
 
 Chart path: **`deploy/helm/agentmesh`**
 
+Templates: control-plane, dataplane, frontend Deployments; ClusterIP Services; PDB + HPA (gated by `autoscaling.enabled`); ServiceMonitors for CP and DP.
+
 ```bash
+# Staging
+helm upgrade --install agentmesh deploy/helm/agentmesh \
+  -n agentmesh-staging --create-namespace \
+  -f deploy/helm/agentmesh/values.yaml \
+  -f deploy/helm/agentmesh/values-staging.yaml \
+  --wait
+
+# Custom
 helm upgrade --install agentmesh deploy/helm/agentmesh \
   -n agentmesh --create-namespace \
   -f my-values.yaml
+```
+
+Build images:
+
+```bash
+docker build -f deploy/Dockerfile.control-plane -t agentmesh/control-plane:0.1.0 .
+docker build -f deploy/Dockerfile.dataplane -t agentmesh/dataplane:0.1.0 .
+docker build -f deploy/Dockerfile.frontend -t agentmesh/frontend:0.1.0 .
 ```
 
 ### Default values highlights
@@ -43,20 +61,23 @@ helm upgrade --install agentmesh deploy/helm/agentmesh \
 | `replicaCount` | 2 |
 | `controlPlane.image` | `agentmesh/control-plane:0.1.0` |
 | `dataPlane.image` | `agentmesh/dataplane:0.1.0` |
+| `frontend.enabled` | true |
+| `frontend.image` | `agentmesh/frontend:0.1.0` |
 | `autoscaling.enabled` | true |
 | `autoscaling.minReplicas` | 2 |
 | `autoscaling.maxReplicas` | 20 |
-| `autoscaling.targetCPUUtilizationPercentage` | 70 |
 | `pdb.minAvailable` | 1 |
+| `serviceMonitor.enabled` | true |
+| `stripe.enabled` | false |
 
 ### HPA and PDB
 
-The control plane template (`templates/control-plane.yaml`) defines:
+CP and DP templates define:
 
-- **HorizontalPodAutoscaler** (autoscaling/v2) on CPU utilization when `autoscaling.enabled` is true
+- **HorizontalPodAutoscaler** (autoscaling/v2) on CPU when `autoscaling.enabled` is true (Deployment `replicas` omitted so HPA owns scale)
 - **PodDisruptionBudget** with `minAvailable` from values
 
-Ensure metrics server is installed in the cluster for HPA.
+Ensure metrics server is installed in the cluster for HPA. Metering: see [ops/01-PAYMENTS.md](../ops/01-PAYMENTS.md).
 
 ### Probes
 

@@ -424,6 +424,8 @@ Copy and mark pass/fail:
 [ ] GET/PUT /v1/policy (max_cost_usd / max_latency_ms / prefer_*)
 [ ] Route rejects when all candidates exceed SLO (metrics: agentmesh_route_slo_reject_total)
 [ ] Discover: max_latency_ms + prefer_free/prefer_local query params
+[ ] ORG_MISMATCH when body/query org_id ≠ authenticated org
+[ ] Successful route inserts billing_events (ClickHouse) when CH up
 [ ] PUT /v1/secrets/providers/{provider} → Keymint; GET list shows configured
 [ ] GET /v1/secrets/audit → org-scoped Keymint lifecycle events (operator+)
 [ ] POST /v1/chat and POST /v1/chat/stream (SSE meta/token/done)

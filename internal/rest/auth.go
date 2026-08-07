@@ -142,6 +142,10 @@ func (g *Gateway) createOrgKey(w http.ResponseWriter, r *http.Request) {
 	if org == "" {
 		org = p.OrgID
 	}
+	if org != p.OrgID {
+		writeJSON(w, http.StatusForbidden, errBody("ORG_MISMATCH", "path org must match authenticated org"))
+		return
+	}
 	var body struct {
 		Name string    `json:"name"`
 		Role auth.Role `json:"role"`
@@ -169,6 +173,10 @@ func (g *Gateway) listOrgKeys(w http.ResponseWriter, r *http.Request) {
 	if org == "" {
 		org = p.OrgID
 	}
+	if org != p.OrgID {
+		writeJSON(w, http.StatusForbidden, errBody("ORG_MISMATCH", "path org must match authenticated org"))
+		return
+	}
 	keys, err := g.auth.Store.ListAPIKeys(r.Context(), org)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errBody("KEYS_FAILED", err.Error()))
@@ -189,6 +197,10 @@ func (g *Gateway) revokeOrgKey(w http.ResponseWriter, r *http.Request) {
 	}
 	org := chi.URLParam(r, "org")
 	keyID := chi.URLParam(r, "key_id")
+	if org != p.OrgID {
+		writeJSON(w, http.StatusForbidden, errBody("ORG_MISMATCH", "path org must match authenticated org"))
+		return
+	}
 	if err := g.auth.Store.RevokeAPIKey(r.Context(), org, keyID); err != nil {
 		writeJSON(w, http.StatusBadRequest, errBody("KEY_REVOKE_FAILED", err.Error()))
 		return

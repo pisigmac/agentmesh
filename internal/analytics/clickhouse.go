@@ -93,6 +93,30 @@ func (s *Store) InsertRoute(ctx context.Context, e RouteEvent) error {
 		e.RoutingStrategy, e.LatencyMs, e.TokenCostUSD, boolToU8(e.Success), e.RetryCount, time.Now().UTC())
 }
 
+// BillingEvent is a metered usage row for Stripe reconciliation.
+type BillingEvent struct {
+	OrgID         string
+	EventType     string
+	Quantity      float64
+	StripeEventID string
+}
+
+func (s *Store) InsertBillingEvent(ctx context.Context, e BillingEvent) error {
+	if s == nil {
+		return nil
+	}
+	if e.EventType == "" {
+		e.EventType = "route"
+	}
+	if e.Quantity == 0 {
+		e.Quantity = 1
+	}
+	return s.conn.Exec(ctx, `INSERT INTO billing_events (
+		org_id, event_type, quantity, stripe_event_id, recorded_at
+	) VALUES (?, ?, ?, ?, ?)`,
+		e.OrgID, e.EventType, e.Quantity, e.StripeEventID, time.Now().UTC())
+}
+
 func boolToU8(b bool) uint8 {
 	if b {
 		return 1
