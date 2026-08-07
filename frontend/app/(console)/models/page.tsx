@@ -54,7 +54,7 @@ export default function ModelsPage() {
         api_model: apiModel || undefined,
       });
       setApiKey("");
-      setMessage(`Saved ${provider} credentials (encrypted in etcd).`);
+      setMessage(`Saved ${provider} credentials in Keymint.`);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed");
@@ -77,9 +77,9 @@ export default function ModelsPage() {
     <>
       <h1 className="page-title">Models & keys</h1>
       <p className="page-desc">
-        Providers and models are loaded from <span className="mono">deploy/models.yaml</span> on the
-        control plane. Keys are encrypted server-side; edit the YAML to add models without rebuilding
-        the UI.
+        Providers and models are loaded from <span className="mono">deploy/models.yaml</span>. Provider
+        API keys are stored in Keymint (vault + virtual keys); AgentMesh never keeps plaintext provider
+        keys in etcd.
       </p>
 
       {error && <div className="alert alert-err">{error}</div>}
@@ -109,7 +109,7 @@ export default function ModelsPage() {
                   </td>
                   <td>
                     {s.configured ? (
-                      <span className="badge badge-ok">Configured</span>
+                      <span className="badge badge-ok">Configured in Keymint</span>
                     ) : (
                       <span className="badge badge-warn">Missing</span>
                     )}
@@ -177,7 +177,7 @@ export default function ModelsPage() {
           </div>
         )}
         <button type="submit" className="btn">
-          Save encrypted
+          Save to Keymint
         </button>
       </form>
 

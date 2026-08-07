@@ -1,8 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ChatResult, ModelInfo, chatCompletion, listModels, listProviderSecrets } from "@/lib/api";
+import {
+  ChatResult,
+  ModelInfo,
+  chatCompletionStream,
+  listModels,
+  listProviderSecrets,
+} from "@/lib/api";
 
 type Turn = { role: "user" | "assistant"; content: string };
 
@@ -12,11 +18,15 @@ export default function ChatPage() {
   const [question, setQuestion] = useState("");
   const [system, setSystem] = useState("You are a helpful engineering assistant.");
   const [routeViaMesh, setRouteViaMesh] = useState(true);
+  const [destination, setDestination] = useState("");
+  const [forcePin, setForcePin] = useState(false);
+  const [pinFailover, setPinFailover] = useState(false);
   const [turns, setTurns] = useState<Turn[]>([]);
-  const [meta, setMeta] = useState<ChatResult | null>(null);
+  const [meta, setMeta] = useState<Partial<ChatResult> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [readyProviders, setReadyProviders] = useState<Set<string>>(new Set());
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     listModels()
@@ -33,6 +43,12 @@ export default function ChatPage() {
   const selected = models.find((m) => m.id === model);
   const providerReady = selected ? readyProviders.has(selected.provider) : false;
 
+  function onCancel() {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setLoading(false);
+  }
+
   async function onSend(e: React.FormEvent) {
     e.preventDefault();
     if (!question.trim()) return;
@@ -40,22 +56,66 @@ export default function ChatPage() {
     setError(null);
     const userText = question.trim();
     setQuestion("");
-    setTurns((t) => [...t, { role: "user", content: userText }]);
+    setTurns((t) => [...t, { role: "user", content: userText }, { role: "assistant", content: "" }]);
+    const ac = new AbortController();
+    abortRef.current = ac;
+    let assistant = "";
     try {
-      const res = await chatCompletion({
-        model,
-        question: userText,
-        system,
-        route_via_mesh: routeViaMesh,
-        source_agent_id: "console-chat",
-      });
-      setMeta(res);
-      setTurns((t) => [...t, { role: "assistant", content: res.answer }]);
+      await chatCompletionStream(
+        {
+          model,
+          question: userText,
+          system,
+          route_via_mesh: routeViaMesh,
+          source_agent_id: "console-chat",
+          destination_agent_id: destination.trim() || undefined,
+          force_pin: forcePin || undefined,
+          pin_failover: pinFailover || undefined,
+        },
+        {
+          signal: ac.signal,
+          onMeta: (m) => {
+            setMeta({
+              model_id: String(m.model_id ?? model),
+              provider: String(m.provider ?? selected?.provider ?? ""),
+              api_model: selected?.api_model ?? "",
+              destination_agent_id: m.destination_agent_id ? String(m.destination_agent_id) : undefined,
+              trace_id: m.trace_id ? String(m.trace_id) : undefined,
+              routed_via_mesh: Boolean(m.routed_via_mesh),
+            });
+          },
+          onToken: (text) => {
+            assistant += text;
+            const snapshot = assistant;
+            setTurns((t) => {
+              const next = [...t];
+              next[next.length - 1] = { role: "assistant", content: snapshot };
+              return next;
+            });
+          },
+          onError: (message) => {
+            setError(message);
+          },
+          onDone: () => {
+            /* stream finished */
+          },
+        },
+      );
+      if (!assistant) {
+        setError("Empty stream response");
+        setTurns((t) => t.slice(0, -2));
+        setQuestion(userText);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Chat failed");
-      setTurns((t) => t.slice(0, -1));
-      setQuestion(userText);
+      if ((err as Error).name === "AbortError") {
+        setError("Cancelled");
+      } else {
+        setError(err instanceof Error ? err.message : "Chat failed");
+        setTurns((t) => t.slice(0, -2));
+        setQuestion(userText);
+      }
     } finally {
+      abortRef.current = null;
       setLoading(false);
     }
   }
@@ -64,13 +124,13 @@ export default function ChatPage() {
     <>
       <h1 className="page-title">Chat</h1>
       <p className="page-desc">
-        Choose a catalog model, ask a question, and the control plane calls the provider with your
-        org’s encrypted key. Mesh routing attaches destination metadata when a matching agent exists.
+        Streaming chat via Keymint proxy. Mesh routing attaches destination metadata when a matching
+        agent exists; optional pin forces a destination agent.
       </p>
 
       {!providerReady && selected && (
         <div className="alert alert-err">
-          No API key for provider <span className="mono">{selected.provider}</span>. Save one under{" "}
+          No Keymint key for provider <span className="mono">{selected.provider}</span>. Save one under{" "}
           <Link href="/models">Models & keys</Link>.
         </div>
       )}
@@ -97,6 +157,29 @@ export default function ChatPage() {
             Route via mesh ({selected?.capability ?? "—"})
           </label>
         </div>
+        <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", marginTop: "0.75rem" }}>
+          <div className="field" style={{ margin: 0, minWidth: "220px" }}>
+            <label htmlFor="pin">Pin agent ID</label>
+            <input
+              id="pin"
+              value={destination}
+              onChange={(e) => setDestination(e.target.value)}
+              placeholder="optional"
+            />
+          </div>
+          <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", fontSize: "0.875rem" }}>
+            <input type="checkbox" checked={forcePin} onChange={(e) => setForcePin(e.target.checked)} />
+            Force pin
+          </label>
+          <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", fontSize: "0.875rem" }}>
+            <input
+              type="checkbox"
+              checked={pinFailover}
+              onChange={(e) => setPinFailover(e.target.checked)}
+            />
+            Pin failover
+          </label>
+        </div>
         {selected && (
           <p style={{ margin: "0.75rem 0 0", fontSize: "0.8125rem", color: "var(--ink-muted)" }}>
             {selected.description} · API model <span className="mono">{selected.api_model}</span>
@@ -113,13 +196,13 @@ export default function ChatPage() {
         <div className="chat-thread">
           {turns.length === 0 && (
             <p className="empty" style={{ padding: "1rem 0" }}>
-              Ask anything. Answers come from the selected provider; keys stay on the server.
+              Ask anything. Tokens stream from Keymint; provider keys stay in the vault.
             </p>
           )}
           {turns.map((t, i) => (
             <div key={i} className={`chat-bubble chat-bubble--${t.role}`}>
               <div className="chat-bubble-role">{t.role}</div>
-              <div className="chat-bubble-body">{t.content}</div>
+              <div className="chat-bubble-body">{t.content || (loading && i === turns.length - 1 ? "…" : "")}</div>
             </div>
           ))}
         </div>
@@ -136,9 +219,16 @@ export default function ChatPage() {
               disabled={loading || !providerReady}
             />
           </div>
-          <button type="submit" className="btn" disabled={loading || !providerReady}>
-            {loading ? "Running…" : "Send"}
-          </button>
+          <div style={{ display: "flex", gap: "0.75rem" }}>
+            <button type="submit" className="btn" disabled={loading || !providerReady}>
+              {loading ? "Streaming…" : "Send"}
+            </button>
+            {loading && (
+              <button type="button" className="btn btn-secondary" onClick={onCancel}>
+                Cancel
+              </button>
+            )}
+          </div>
         </form>
       </div>
 
@@ -159,14 +249,12 @@ export default function ChatPage() {
               </tr>
               <tr>
                 <th>Mesh</th>
-                <td>{meta.routed_via_mesh ? "yes" : "direct provider"}</td>
+                <td>{meta.routed_via_mesh ? "yes" : "direct via Keymint"}</td>
               </tr>
               {meta.destination_agent_id && (
                 <tr>
                   <th>Destination</th>
-                  <td className="mono">
-                    {meta.destination_agent_id} ({meta.destination_agent_type})
-                  </td>
+                  <td className="mono">{meta.destination_agent_id}</td>
                 </tr>
               )}
               {meta.trace_id && (

@@ -39,7 +39,7 @@ Answer back to your app / user
 | AgentMesh data plane (optional) | HTTP proxy to `endpoint_url` after route |
 | Agent (Cursor, Claude Code, custom, …) | Model config, prompts, execution |
 
-There is **no** `destination_agent_id` field on `POST /v1/route` today. Selection is by **capability**, **routing strategy**, optional **agent type filter**, and circuit state. To pin a single agent, use a unique capability or discover-then-call (see [Targeting a specific agent](#targeting-a-specific-agent)).
+`POST /v1/route` accepts optional **`destination_agent_id`** (hard pin), **`prefer_agent_ids`** (soft preference), **`force_pin`**, and **`pin_failover`**. Without a pin, selection is by **capability**, **routing strategy**, optional **agent type filter**, and circuit state.
 
 ---
 
@@ -179,6 +179,10 @@ This is the core control-plane call. It returns **where** to send the next reque
 | `source_agent_id` | No | Caller identity (rate limits, analytics, injected header) |
 | `routing_strategy` | No | Overrides org policy default |
 | `fallback_agent_types` | No | Restrict candidates to these `agent_type` values |
+| `destination_agent_id` | No | Hard pin to this agent |
+| `prefer_agent_ids` | No | Soft preference — move eligible IDs to front of ranked list |
+| `force_pin` | No | Allow pin if unhealthy or missing capability |
+| `pin_failover` | No | If pinned circuit is open, fall back to normal ranking |
 | `headers` | No | Extra keys merged into `injected_headers` on the response |
 | `payload_hint` | No | Opaque bytes (proto); not used by ranking today |
 
@@ -461,4 +465,4 @@ Map natural-language intents to **capabilities** in your app (AgentMesh does not
 1. **Tag** agents with capabilities that match workloads (`code_gen`, `support_qa`, …).
 2. **Route** with `POST /v1/route` using that capability (and optional type filter / strategy).
 3. **Send** the question to the returned `endpoint_url` (directly or via data plane), with `injected_headers`.
-4. **Pin** a required agent via unique capability or discover-by-id—not via a destination ID field on route (not implemented yet).
+4. **Pin** a required agent with `destination_agent_id` on `/v1/route` (or Chat pin control). Use `force_pin` / `pin_failover` as needed.

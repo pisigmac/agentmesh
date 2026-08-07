@@ -34,9 +34,17 @@ export default function AgentsPage() {
     try {
       const mc = maxCost ? parseFloat(maxCost) : undefined;
       const org = selectedOrg || "default";
-      const catalog = await discoverAgents(undefined, undefined, { orgId: org, limit: 256 });
+      const catalog = await discoverAgents(undefined, undefined, {
+        orgId: org,
+        limit: 256,
+        includeUnhealthy: true,
+      });
       setAllAgents(catalog);
-      const filtered = await discoverAgents(capability || undefined, mc, { orgId: org, limit: 256 });
+      const filtered = await discoverAgents(capability || undefined, mc, {
+        orgId: org,
+        limit: 256,
+        includeUnhealthy: true,
+      });
       setAgents(filtered);
       if (selectedAgentId && !filtered.some((a) => a.agent_id === selectedAgentId)) {
         setSelectedAgentId("");
@@ -72,7 +80,8 @@ export default function AgentsPage() {
       <h1 className="page-title">Agents</h1>
       <p className="page-desc">
         Discovery scoped by org. The <span className="mono">default</span> org aggregates agents from every
-        tenant in the mesh.
+        tenant in the mesh. Leased agents need <span className="mono">-keepalive</span> or they expire;
+        use <span className="mono">-persistent</span> for seed/catalog agents.
       </p>
 
       <div className="card">
@@ -131,7 +140,8 @@ export default function AgentsPage() {
         ) : tableRows.length === 0 ? (
           <div className="empty">
             <strong>No agents match this filter</strong>
-            Seed the catalog for the default org:
+            Leases may have expired — use <span className="mono">-keepalive</span> or{" "}
+            <span className="mono">-persistent</span>. Seed the catalog:
             <br />
             <code className="mono" style={{ display: "inline-block", marginTop: "1rem" }}>
               ./scripts/seed-all-agents.sh
@@ -144,6 +154,7 @@ export default function AgentsPage() {
                 {showOrgColumn && <th>Org</th>}
                 <th>Agent ID</th>
                 <th>Type</th>
+                <th>Status</th>
                 <th>Capabilities</th>
                 <th>Rank</th>
                 <th>Latency</th>
@@ -156,6 +167,18 @@ export default function AgentsPage() {
                   <td className="mono">{a.agent_id}</td>
                   <td>
                     <span className="badge badge-neutral">{a.agent_type}</span>
+                  </td>
+                  <td>
+                    {a.healthy === false ? (
+                      <span className="badge badge-err">unhealthy</span>
+                    ) : (
+                      <span className="badge badge-ok">healthy</span>
+                    )}{" "}
+                    {a.persistent ? (
+                      <span className="badge badge-neutral">persistent</span>
+                    ) : (
+                      <span className="badge badge-warn">leased</span>
+                    )}
                   </td>
                   <td>{(a.capabilities ?? []).join(", ") || "—"}</td>
                   <td>{a.rank_score != null ? a.rank_score.toFixed(1) : "—"}</td>

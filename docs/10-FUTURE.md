@@ -2,6 +2,8 @@
 
 Planned enhancements beyond the current 0.1.x control/data plane split. Timelines are indicative, not commitments.
 
+**Detailed market positioning, enhancement backlog (E1–E20), phases, and success metrics:** see root [`FUTURE_PLAN.md`](../FUTURE_PLAN.md).
+
 ## Q3 — Control plane hardening
 
 - Persistent API key store (replace in-memory `MemoryKeyStore` in production paths)

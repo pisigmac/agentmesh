@@ -12,10 +12,10 @@ import (
 	"github.com/agentmesh/agentmesh/internal/auth"
 	"github.com/agentmesh/agentmesh/internal/grpcserver"
 	"github.com/agentmesh/agentmesh/internal/inference"
+	"github.com/agentmesh/agentmesh/internal/keymint"
 	"github.com/agentmesh/agentmesh/internal/models"
 	"github.com/agentmesh/agentmesh/internal/policy"
 	"github.com/agentmesh/agentmesh/internal/registry"
-	"github.com/agentmesh/agentmesh/internal/secrets"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -25,18 +25,18 @@ type Gateway struct {
 	keys     auth.KeyStore
 	policies *policy.Store
 	registry *registry.Store
-	secrets  *secrets.Store
+	keymint  *keymint.Facade
 	infer    *inference.Client
 	catalog  *models.Catalog
 }
 
-func NewGateway(grpcAddr string, keys auth.KeyStore, policies *policy.Store, reg *registry.Store, sec *secrets.Store, catalog *models.Catalog) *Gateway {
+func NewGateway(grpcAddr string, keys auth.KeyStore, policies *policy.Store, reg *registry.Store, km *keymint.Facade, catalog *models.Catalog) *Gateway {
 	return &Gateway{
 		grpcAddr: grpcAddr,
 		keys:     keys,
 		policies: policies,
 		registry: reg,
-		secrets:  sec,
+		keymint:  km,
 		infer:    inference.NewClient(),
 		catalog:  catalog,
 	}
@@ -56,6 +56,7 @@ func (g *Gateway) Routes() chi.Router {
 		v1.Use(g.authMiddleware)
 		v1.Post("/agents/register", g.registerAgent)
 		v1.Get("/agents/discover", g.discoverAgents)
+		v1.Post("/agents/health", g.reportHealth)
 		v1.Get("/orgs", g.listOrgs)
 		v1.Post("/route", g.route)
 		v1.Get("/circuit/{agent_id}", g.circuitState)
@@ -66,7 +67,9 @@ func (g *Gateway) Routes() chi.Router {
 		v1.Get("/secrets/providers", g.listSecrets)
 		v1.Put("/secrets/providers/{provider}", g.putSecret)
 		v1.Delete("/secrets/providers/{provider}", g.deleteSecret)
+		v1.Get("/secrets/keymint", g.keymintStatus)
 		v1.Post("/chat", g.chat)
+		v1.Post("/chat/stream", g.chatStream)
 	})
 	return r
 }
@@ -126,9 +129,9 @@ func (g *Gateway) registerAgent(w http.ResponseWriter, r *http.Request) {
 
 func (g *Gateway) discoverAgents(w http.ResponseWriter, r *http.Request) {
 	q := &agentmeshv1.DiscoveryQuery{
-		OrgId:            orgFromCtx(r),
-		Capability:       r.URL.Query().Get("capability"),
-		RoutingStrategy:  r.URL.Query().Get("routing_strategy"),
+		OrgId:           orgFromCtx(r),
+		Capability:      r.URL.Query().Get("capability"),
+		RoutingStrategy: r.URL.Query().Get("routing_strategy"),
 	}
 	if mc := r.URL.Query().Get("max_cost"); mc != "" {
 		if f, err := strconv.ParseFloat(mc, 64); err == nil {
@@ -143,6 +146,8 @@ func (g *Gateway) discoverAgents(w http.ResponseWriter, r *http.Request) {
 	if orgQ := strings.TrimSpace(r.URL.Query().Get("org_id")); orgQ != "" {
 		q.OrgId = orgQ
 	}
+	iu := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("include_unhealthy")))
+	q.IncludeUnhealthy = iu == "1" || iu == "true" || iu == "yes"
 	client, conn, err := g.dial(r.Context())
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errBody("INTERNAL", err.Error()))
@@ -154,15 +159,50 @@ func (g *Gateway) discoverAgents(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, errBody("DISCOVER_FAILED", err.Error()))
 		return
 	}
-	var endpoints []*agentmeshv1.AgentEndpoint
+	var endpoints []map[string]any
 	for {
 		ep, err := stream.Recv()
 		if err != nil {
 			break
 		}
-		endpoints = append(endpoints, ep)
+		// Explicit bools so healthy=false is not dropped by proto json omitempty.
+		endpoints = append(endpoints, map[string]any{
+			"agent_id":             ep.GetAgentId(),
+			"agent_type":           ep.GetAgentType(),
+			"endpoint_url":         ep.GetEndpointUrl(),
+			"capabilities":         ep.GetCapabilities(),
+			"estimated_latency_ms": ep.GetEstimatedLatencyMs(),
+			"success_rate":         ep.GetSuccessRate(),
+			"cost_score":           ep.GetCostScore(),
+			"rank_score":           ep.GetRankScore(),
+			"org_id":               ep.GetOrgId(),
+			"healthy":              ep.GetHealthy(),
+			"persistent":           ep.GetPersistent(),
+		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"agents": endpoints})
+}
+
+func (g *Gateway) reportHealth(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		AgentID string `json:"agent_id"`
+		Healthy bool   `json:"healthy"`
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, errBody("INVALID_JSON", err.Error()))
+		return
+	}
+	if body.AgentID == "" {
+		writeJSON(w, http.StatusBadRequest, errBody("INVALID_ARGUMENT", "agent_id required"))
+		return
+	}
+	org := orgFromCtx(r)
+	if err := g.registry.UpdateHealth(r.Context(), org, body.AgentID, body.Healthy, body.Message); err != nil {
+		writeJSON(w, http.StatusBadRequest, errBody("HEALTH_FAILED", err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"accepted": true})
 }
 
 func (g *Gateway) listOrgs(w http.ResponseWriter, r *http.Request) {
@@ -191,7 +231,7 @@ func (g *Gateway) route(w http.ResponseWriter, r *http.Request) {
 	defer conn.Close()
 	resp, err := client.RouteRequest(r.Context(), &body)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, errBody("ROUTE_FAILED", err.Error()))
+		writeJSON(w, http.StatusBadRequest, errBody("ROUTE_FAILED", err.Error()))
 		return
 	}
 	writeJSON(w, http.StatusOK, resp)
@@ -206,7 +246,7 @@ func (g *Gateway) circuitState(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 	st, err := client.GetCircuitState(r.Context(), &agentmeshv1.CircuitQuery{
-		OrgId:               orgFromCtx(r),
+		OrgId:              orgFromCtx(r),
 		DestinationAgentId: agentID,
 	})
 	if err != nil {

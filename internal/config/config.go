@@ -17,6 +17,7 @@ type Config struct {
 	ClickHouse   ClickHouseConfig
 	Auth         AuthConfig
 	Secrets      SecretsConfig
+	Keymint      KeymintConfig
 	Models       ModelsConfig
 	GuardLoop    GuardLoopConfig
 	TraceLens    TraceLensConfig
@@ -61,8 +62,14 @@ type AuthConfig struct {
 }
 
 type SecretsConfig struct {
-	// MasterKey encrypts org provider API keys at rest in etcd (AES-GCM).
+	// MasterKey encrypts Keymint virtual-key bindings at rest in etcd (AES-GCM).
 	MasterKey string
+}
+
+type KeymintConfig struct {
+	BaseURL string
+	APIKey  string
+	TeamID  string
 }
 
 type ModelsConfig struct {
@@ -125,6 +132,11 @@ func Load() Config {
 		},
 		Secrets: SecretsConfig{
 			MasterKey: getenv("AGENTMESH_SECRETS_KEY", getenv("AGENTMESH_DEV_API_KEY", "agentmesh-dev-key")),
+		},
+		Keymint: KeymintConfig{
+			BaseURL: getenv("KEYMINT_BASE_URL", ""),
+			APIKey:  getenv("KEYMINT_API_KEY", ""),
+			TeamID:  getenv("KEYMINT_TEAM_ID", ""),
 		},
 		Models: ModelsConfig{
 			CatalogPath: getenv("MODELS_CATALOG_PATH", ""),

@@ -37,6 +37,9 @@ services:
       CLICKHOUSE_DATABASE: agentmesh
       AGENTMESH_DEV_API_KEY: agentmesh-dev-key
       AGENTMESH_SECRETS_KEY: ${AGENTMESH_SECRETS_KEY:-agentmesh-dev-key}
+      KEYMINT_BASE_URL: ${KEYMINT_BASE_URL:-}
+      KEYMINT_API_KEY: ${KEYMINT_API_KEY:-}
+      KEYMINT_TEAM_ID: ${KEYMINT_TEAM_ID:-}
       MODELS_CATALOG_PATH: /etc/agentmesh/models.yaml
       CONTROL_PLANE_HTTP_PORT: 8080
       CONTROL_PLANE_GRPC_PORT: 9090

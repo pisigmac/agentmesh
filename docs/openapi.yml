@@ -107,6 +107,10 @@ components:
           type: number
         org_id:
           type: string
+        healthy:
+          type: boolean
+        persistent:
+          type: boolean
     DiscoverResponse:
       type: object
       properties:
@@ -133,6 +137,7 @@ components:
             - least-cost
             - round-robin
             - score-based
+            - pin
         fallback_agent_types:
           type: array
           items:
@@ -144,6 +149,20 @@ components:
           type: object
           additionalProperties:
             type: string
+        destination_agent_id:
+          type: string
+          description: Hard-pin routing to this agent when set
+        prefer_agent_ids:
+          type: array
+          items:
+            type: string
+          description: Soft preference — eligible agents moved to front of ranked list
+        force_pin:
+          type: boolean
+          description: Allow pin even if unhealthy or missing capability
+        pin_failover:
+          type: boolean
+          description: If pinned agent circuit is open, fall back to normal ranking
     RouteResponse:
       type: object
       properties:
@@ -269,6 +288,11 @@ paths:
           description: Discovery scope (defaults to X-Org-ID). Org `default` aggregates all tenants.
           schema:
             type: string
+        - name: include_unhealthy
+          in: query
+          description: When `1`/`true`, return all agents (including unhealthy) for catalog UI
+          schema:
+            type: string
       responses:
         '200':
           description: Ranked agents
@@ -276,6 +300,34 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DiscoverResponse'
+        '401':
+          description: Unauthorized
+  /v1/agents/health:
+    post:
+      operationId: reportAgentHealth
+      summary: Report agent health (maps to gRPC ReportHealth)
+      parameters:
+        - name: X-Org-ID
+          in: header
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent_id, healthy]
+              properties:
+                agent_id:
+                  type: string
+                healthy:
+                  type: boolean
+                message:
+                  type: string
+      responses:
+        '200':
+          description: Accepted
         '401':
           description: Unauthorized
   /v1/orgs:
@@ -371,5 +423,87 @@ paths:
       responses:
         '200':
           description: Updated
+        '401':
+          description: Unauthorized
+  /v1/chat:
+    post:
+      operationId: chatCompletion
+      summary: Non-streaming chat via Keymint proxy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [model]
+              properties:
+                model:
+                  type: string
+                question:
+                  type: string
+                system:
+                  type: string
+                messages:
+                  type: array
+                  items:
+                    type: object
+                route_via_mesh:
+                  type: boolean
+                source_agent_id:
+                  type: string
+                destination_agent_id:
+                  type: string
+                prefer_agent_ids:
+                  type: array
+                  items:
+                    type: string
+                force_pin:
+                  type: boolean
+                pin_failover:
+                  type: boolean
+      responses:
+        '200':
+          description: Chat result
+        '401':
+          description: Unauthorized
+  /v1/chat/stream:
+    post:
+      operationId: chatCompletionStream
+      summary: SSE streaming chat via Keymint proxy
+      description: |
+        Events: `meta`, `token`, `done`, `error` (text/event-stream).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [model]
+              properties:
+                model:
+                  type: string
+                question:
+                  type: string
+                system:
+                  type: string
+                messages:
+                  type: array
+                  items:
+                    type: object
+                route_via_mesh:
+                  type: boolean
+                destination_agent_id:
+                  type: string
+                force_pin:
+                  type: boolean
+                pin_failover:
+                  type: boolean
+      responses:
+        '200':
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
         '401':
           description: Unauthorized

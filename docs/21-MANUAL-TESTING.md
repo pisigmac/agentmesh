@@ -397,19 +397,23 @@ Copy and mark pass/fail:
 ```
 [ ] Stack start (start-all or start-local)
 [ ] health / ready / dataplane / prometheus / clickhouse ping
+[ ] Keymint up; KEYMINT_* set on control plane
 [ ] seed-policy.sh
 [ ] seed-all-agents.sh (9 agents, persistent)
 [ ] GET /v1/orgs
-[ ] GET /v1/agents/discover?limit=256
-[ ] POST /v1/route
+[ ] GET /v1/agents/discover?include_unhealthy=1&limit=256 (healthy + persistent flags)
+[ ] POST /v1/agents/health (badge flips in UI)
+[ ] POST /v1/route with destination_agent_id (pin; x-agentmesh-pin)
 [ ] GET /v1/circuit/{agent_id}
 [ ] GET/PUT /v1/policy
-[ ] UI Settings saved
-[ ] UI Agents: org + agent dropdowns, tab navigation persistence
-[ ] UI Route debugger
-[ ] UI Circuits
-[ ] UI Policy editor
-[ ] Landing ↔ console navigation
+[ ] PUT /v1/secrets/providers/{provider} → Keymint; GET list shows configured
+[ ] POST /v1/chat and POST /v1/chat/stream (SSE meta/token/done)
+[ ] UI Settings: Keymint connected
+[ ] UI Agents: healthy/unhealthy + persistent/leased badges
+[ ] UI Route debugger pin controls
+[ ] UI Chat stream + Cancel + pin
+[ ] UI Models: Configured in Keymint
+[ ] UI Circuits / Policy / Landing ↔ console
 [ ] make test && frontend npm run build
 [ ] stop-all (or stop-local)
 ```

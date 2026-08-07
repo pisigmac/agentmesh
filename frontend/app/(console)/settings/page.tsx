@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { KeymintStatus, getKeymintStatus } from "@/lib/api";
 import { getApiBase, getApiKey, getOrgId, saveSettings } from "@/lib/config";
 
 export default function SettingsPage() {
@@ -8,11 +9,15 @@ export default function SettingsPage() {
   const [org, setOrg] = useState("");
   const [key, setKey] = useState("");
   const [saved, setSaved] = useState(false);
+  const [keymint, setKeymint] = useState<KeymintStatus | null>(null);
 
   useEffect(() => {
     setBase(getApiBase());
     setOrg(getOrgId());
     setKey(getApiKey());
+    getKeymintStatus()
+      .then(setKeymint)
+      .catch(() => setKeymint({ configured: false }));
   }, []);
 
   function onSave(e: React.FormEvent) {
@@ -52,6 +57,24 @@ export default function SettingsPage() {
           </span>
         )}
       </form>
+
+      <div className="card">
+        <h2>Keymint</h2>
+        {keymint == null ? (
+          <p style={{ margin: 0, color: "var(--ink-muted)", fontSize: "0.875rem" }}>Checking…</p>
+        ) : keymint.configured ? (
+          <p style={{ margin: 0, fontSize: "0.875rem" }}>
+            <span className="badge badge-ok">Connected</span>{" "}
+            <span className="mono">{keymint.base_url}</span>
+          </p>
+        ) : (
+          <p style={{ margin: 0, color: "var(--ink-muted)", fontSize: "0.875rem" }}>
+            <span className="badge badge-warn">Not configured</span> Set{" "}
+            <span className="mono">KEYMINT_BASE_URL</span>, <span className="mono">KEYMINT_API_KEY</span>,{" "}
+            <span className="mono">KEYMINT_TEAM_ID</span> on the control plane for Models & Chat.
+          </p>
+        )}
+      </div>
 
       <div className="card">
         <h2>Clerk SSO</h2>

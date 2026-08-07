@@ -18,12 +18,12 @@ import (
 	"github.com/agentmesh/agentmesh/internal/grpcserver"
 	"github.com/agentmesh/agentmesh/internal/policy"
 	"github.com/agentmesh/agentmesh/internal/ratelimit"
+	"github.com/agentmesh/agentmesh/internal/keymint"
 	"github.com/agentmesh/agentmesh/internal/models"
 	"github.com/agentmesh/agentmesh/internal/registry"
 	"github.com/agentmesh/agentmesh/internal/rest"
 	"github.com/agentmesh/agentmesh/internal/router"
 	"github.com/agentmesh/agentmesh/internal/score/guardloop"
-	"github.com/agentmesh/agentmesh/internal/secrets"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
@@ -73,11 +73,19 @@ func main() {
 	limiter := ratelimit.New(rdb, "agentmesh")
 
 	keys := auth.NewMemoryKeyStore(getenv("AGENTMESH_DEV_API_KEY", "agentmesh-dev-key"))
-	secStore, err := secrets.NewStore(cfg.Etcd.Endpoints, cfg.Etcd.Prefix, cfg.Secrets.MasterKey)
+
+	bindStore, err := keymint.NewBindStore(cfg.Etcd.Endpoints, cfg.Etcd.Prefix, cfg.Secrets.MasterKey)
 	if err != nil {
-		log.Fatal("secrets store", zap.Error(err))
+		log.Fatal("keymint bind store", zap.Error(err))
 	}
-	defer secStore.Close()
+	defer bindStore.Close()
+	kmClient := keymint.NewClient(cfg.Keymint.BaseURL, cfg.Keymint.APIKey, cfg.Keymint.TeamID)
+	kmFacade := &keymint.Facade{Client: kmClient, Binds: bindStore}
+	if kmClient.Configured() {
+		log.Info("keymint configured", zap.String("base_url", cfg.Keymint.BaseURL))
+	} else {
+		log.Warn("keymint not configured; Models/Chat require KEYMINT_BASE_URL, KEYMINT_API_KEY, KEYMINT_TEAM_ID")
+	}
 
 	catalogPath := models.ResolvePath(cfg.Models.CatalogPath)
 	catalog, err := models.Load(catalogPath)
@@ -102,7 +110,7 @@ func main() {
 		}
 	}()
 
-	gw := rest.NewGateway(fmt.Sprintf("localhost:%d", cfg.ControlPlane.GRPCPort), keys, policies, reg, secStore, catalog)
+	gw := rest.NewGateway(fmt.Sprintf("localhost:%d", cfg.ControlPlane.GRPCPort), keys, policies, reg, kmFacade, catalog)
 	httpSrv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.ControlPlane.HTTPPort),
 		Handler: mountHTTP(gw.Routes()),

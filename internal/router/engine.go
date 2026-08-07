@@ -149,3 +149,46 @@ func FilterByFallbackTypes(ranked []Ranked, types []string) []Ranked {
 	}
 	return out
 }
+
+// PreferAgentIDs moves matching eligible agents to the front of the ranked list
+// (preserving relative order among preferred and among the rest).
+func PreferAgentIDs(ranked []Ranked, prefer []string) []Ranked {
+	if len(ranked) == 0 || len(prefer) == 0 {
+		return ranked
+	}
+	order := make(map[string]int, len(prefer))
+	for i, id := range prefer {
+		if id == "" {
+			continue
+		}
+		if _, ok := order[id]; !ok {
+			order[id] = i
+		}
+	}
+	if len(order) == 0 {
+		return ranked
+	}
+	var front, rest []Ranked
+	for _, r := range ranked {
+		if _, ok := order[r.Agent.AgentID]; ok {
+			front = append(front, r)
+		} else {
+			rest = append(rest, r)
+		}
+	}
+	sort.SliceStable(front, func(i, j int) bool {
+		return order[front[i].Agent.AgentID] < order[front[j].Agent.AgentID]
+	})
+	return append(front, rest...)
+}
+
+// FindAgent returns the agent with the given ID, or nil.
+func FindAgent(agents []registry.AgentRecord, agentID string) *registry.AgentRecord {
+	for i := range agents {
+		if agents[i].AgentID == agentID {
+			rec := agents[i]
+			return &rec
+		}
+	}
+	return nil
+}

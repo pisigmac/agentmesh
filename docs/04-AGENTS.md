@@ -35,13 +35,20 @@ Protobuf `AgentRegistration` fields:
 
 Successful registration returns `lease_ttl_seconds`. Agents must refresh before TTL expiry or etcd will drop the record.
 
+- Non-persistent agents: run the CLI/sidecar with **`-keepalive`** so the lease renews.
+- Catalog/seed agents: register with metadata `persistent=true` (CLI `-persistent`) so they survive without keepalive.
+- Console Agents table shows **healthy / unhealthy** and **persistent / leased** (discover with `include_unhealthy=1`).
+- Report health: `POST /v1/agents/health` with `{ "agent_id", "healthy", "message?" }`.
+
 ## Discovery
 
 Query `GET /v1/agents/discover?capability=code_gen&routing_strategy=least-latency&max_cost=0.05`.
 
+Catalog listing (includes unhealthy): `GET /v1/agents/discover?include_unhealthy=1&limit=256`.
+
 To turn a user question into a call on a selected agent, see **[22-ROUTING-QUESTIONS.md](22-ROUTING-QUESTIONS.md)**.
 
-Streaming gRPC `DiscoverAgents` yields ranked `AgentEndpoint` messages with `rank_score`, `success_rate`, and `estimated_latency_ms`.
+Streaming gRPC `DiscoverAgents` yields ranked `AgentEndpoint` messages with `rank_score`, `success_rate`, `estimated_latency_ms`, `healthy`, and `persistent`.
 
 ## Fallback chains
 

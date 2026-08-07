@@ -48,12 +48,28 @@ For a full walkthrough (capabilities → route → send the question to the agen
 | Field | Description |
 |-------|-------------|
 | `capability` | Required capability to satisfy |
-| `routing_strategy` | Strategy name |
+| `routing_strategy` | Strategy name (`pin` when hard-pinned) |
 | `source_agent_id` | Calling agent (for analytics) |
 | `fallback_agent_types` | Ordered type fallbacks |
+| `destination_agent_id` | Optional hard pin to this agent |
+| `prefer_agent_ids` | Soft preference (eligible agents moved to front) |
+| `force_pin` | Allow pin if unhealthy / missing capability |
+| `pin_failover` | If pinned circuit is open, fall back to normal ranking |
 | `headers` | Hints forwarded in routing decision |
 
-**Response**: **200** `RouteResponse` including `destination_agent_id`, `endpoint_url`, `injected_headers`, `fallback_chain`, `timeout_ms`, `max_retries`, `trace_context`.
+**Response**: **200** `RouteResponse` including `destination_agent_id`, `endpoint_url`, `injected_headers` (includes `x-agentmesh-pin=true` when hard-pinned), `fallback_chain`, `timeout_ms`, `max_retries`, `trace_context`.
+
+## GET /v1/agents/discover
+
+Query params: `capability`, `routing_strategy`, `max_cost`, `limit`, `org_id`, `include_unhealthy=1` (catalog UI; includes unhealthy agents with `healthy` / `persistent` flags).
+
+## POST /v1/agents/health
+
+**Body**: `{ "agent_id", "healthy", "message?" }` — updates registry health for the authenticated org.
+
+## POST /v1/chat and POST /v1/chat/stream
+
+Inference via Keymint proxy. See [23-MODEL-INFERENCE.md](23-MODEL-INFERENCE.md). Stream uses SSE (`meta` / `token` / `done` / `error`).
 
 ## GET /v1/circuit/{agent_id}
 

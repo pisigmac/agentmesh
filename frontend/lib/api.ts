@@ -39,6 +39,8 @@ export type AgentEndpoint = {
   rank_score?: number;
   estimated_latency_ms?: number;
   success_rate?: number;
+  healthy?: boolean;
+  persistent?: boolean;
 };
 
 export async function listOrgs(): Promise<string[]> {
@@ -53,16 +55,27 @@ export async function listOrgs(): Promise<string[]> {
 export async function discoverAgents(
   capability?: string,
   maxCost?: number,
-  opts?: { orgId?: string; limit?: number },
+  opts?: { orgId?: string; limit?: number; includeUnhealthy?: boolean },
 ) {
   const q = new URLSearchParams();
   if (capability) q.set("capability", capability);
   if (maxCost != null && maxCost > 0) q.set("max_cost", String(maxCost));
   if (opts?.limit != null && opts.limit > 0) q.set("limit", String(opts.limit));
+  if (opts?.includeUnhealthy) q.set("include_unhealthy", "1");
   const data = await request<{ agents: AgentEndpoint[] }>(`/v1/agents/discover?${q}`, undefined, {
     orgId: opts?.orgId,
   });
   return data.agents ?? [];
+}
+
+export async function reportAgentHealth(
+  body: { agent_id: string; healthy: boolean; message?: string },
+  opts?: RequestOptions,
+) {
+  return request<{ accepted: boolean }>("/v1/agents/health", {
+    method: "POST",
+    body: JSON.stringify(body),
+  }, opts);
 }
 
 export type RoutePayload = {
@@ -70,6 +83,10 @@ export type RoutePayload = {
   capability?: string;
   routing_strategy?: string;
   fallback_agent_types?: string[];
+  destination_agent_id?: string;
+  prefer_agent_ids?: string[];
+  force_pin?: boolean;
+  pin_failover?: boolean;
 };
 
 export type RouteResponse = {
@@ -141,6 +158,13 @@ export type ProviderSecretView = {
   base_url?: string;
   api_model?: string;
   updated_at?: string;
+  backend?: string;
+};
+
+export type KeymintStatus = {
+  configured: boolean;
+  base_url?: string;
+  backend?: string;
 };
 
 export async function listModels(opts?: RequestOptions) {
@@ -156,6 +180,10 @@ export async function listProviders(opts?: RequestOptions) {
 export async function listProviderSecrets(opts?: RequestOptions) {
   const data = await request<{ secrets: ProviderSecretView[] }>("/v1/secrets/providers", undefined, opts);
   return data.secrets ?? [];
+}
+
+export async function getKeymintStatus(opts?: RequestOptions) {
+  return request<KeymintStatus>("/v1/secrets/keymint", undefined, opts);
 }
 
 export async function putProviderSecret(
@@ -191,16 +219,79 @@ export type ChatResult = {
   usage?: Record<string, unknown>;
 };
 
-export async function chatCompletion(
-  body: {
-    model: string;
-    question?: string;
-    system?: string;
-    messages?: { role: string; content: string }[];
-    route_via_mesh?: boolean;
-    source_agent_id?: string;
-  },
-  opts?: RequestOptions,
-) {
+export type ChatBody = {
+  model: string;
+  question?: string;
+  system?: string;
+  messages?: { role: string; content: string }[];
+  route_via_mesh?: boolean;
+  source_agent_id?: string;
+  destination_agent_id?: string;
+  prefer_agent_ids?: string[];
+  force_pin?: boolean;
+  pin_failover?: boolean;
+};
+
+export async function chatCompletion(body: ChatBody, opts?: RequestOptions) {
   return request<ChatResult>("/v1/chat", { method: "POST", body: JSON.stringify(body) }, opts);
+}
+
+export type StreamHandlers = {
+  onMeta?: (meta: Record<string, unknown>) => void;
+  onToken?: (text: string) => void;
+  onDone?: (done: Record<string, unknown>) => void;
+  onError?: (message: string) => void;
+  signal?: AbortSignal;
+};
+
+export async function chatCompletionStream(body: ChatBody, handlers: StreamHandlers, opts?: RequestOptions) {
+  const org = opts?.orgId ?? getOrgId();
+  const res = await fetch(`${getApiBase()}/v1/chat/stream`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${getApiKey()}`,
+      "X-Org-ID": org,
+    },
+    body: JSON.stringify(body),
+    signal: handlers.signal,
+  });
+  if (!res.ok) {
+    const bodyJson = await res.json().catch(() => ({}));
+    const err = bodyJson?.error as ApiError | undefined;
+    throw new Error(err?.message || `HTTP ${res.status}`);
+  }
+  if (!res.body) {
+    throw new Error("No response body for stream");
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let event = "message";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split("\n");
+    buffer = parts.pop() ?? "";
+    for (const line of parts) {
+      if (line.startsWith("event:")) {
+        event = line.slice(6).trim();
+        continue;
+      }
+      if (!line.startsWith("data:")) continue;
+      const data = line.slice(5).trim();
+      let parsed: Record<string, unknown> = {};
+      try {
+        parsed = JSON.parse(data);
+      } catch {
+        continue;
+      }
+      if (event === "meta") handlers.onMeta?.(parsed);
+      else if (event === "token") handlers.onToken?.(String(parsed.text ?? ""));
+      else if (event === "done") handlers.onDone?.(parsed);
+      else if (event === "error") handlers.onError?.(String(parsed.message ?? "stream error"));
+      event = "message";
+    }
+  }
 }

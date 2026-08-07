@@ -3,6 +3,7 @@ package grpcserver
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	agentmeshv1 "github.com/agentmesh/agentmesh/gen/agentmesh/v1"
@@ -81,13 +82,6 @@ func (s *Server) DiscoverAgents(req *agentmeshv1.DiscoveryQuery, stream agentmes
 	if err != nil {
 		return status.Errorf(codes.Internal, "list: %v", err)
 	}
-	ranked := s.engine.Rank(router.RankInput{
-		OrgID:      req.GetOrgId(),
-		Capability: req.GetCapability(),
-		MaxCost:    maxCost,
-		Strategy:   router.Strategy(strategy),
-		Agents:     agents,
-	})
 	limit := int(req.GetLimit())
 	if limit <= 0 {
 		if req.GetCapability() == "" {
@@ -96,26 +90,59 @@ func (s *Server) DiscoverAgents(req *agentmeshv1.DiscoveryQuery, stream agentmes
 			limit = 50
 		}
 	}
+
+	if req.GetIncludeUnhealthy() {
+		// Catalog listing: return all agents (optionally capability-filtered) with health flags.
+		n := 0
+		for _, a := range agents {
+			if req.GetCapability() != "" && !registry.HasCapability(a, req.GetCapability()) {
+				continue
+			}
+			if n >= limit {
+				break
+			}
+			ep := toEndpoint(a, 0)
+			if err := stream.Send(ep); err != nil {
+				return err
+			}
+			n++
+		}
+		return nil
+	}
+
+	ranked := s.engine.Rank(router.RankInput{
+		OrgID:      req.GetOrgId(),
+		Capability: req.GetCapability(),
+		MaxCost:    maxCost,
+		Strategy:   router.Strategy(strategy),
+		Agents:     agents,
+	})
 	for i, r := range ranked {
 		if i >= limit {
 			break
 		}
-		ep := &agentmeshv1.AgentEndpoint{
-			AgentId:            r.Agent.AgentID,
-			AgentType:          r.Agent.AgentType,
-			EndpointUrl:        r.Agent.EndpointURL,
-			Capabilities:       r.Agent.Capabilities,
-			EstimatedLatencyMs: r.Agent.LatencyEWMA,
-			SuccessRate:        r.Agent.SuccessRate,
-			CostScore:          r.Agent.CostPerReq,
-			RankScore:          r.Score,
-			OrgId:              r.Agent.OrgID,
-		}
+		ep := toEndpoint(r.Agent, r.Score)
 		if err := stream.Send(ep); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func toEndpoint(a registry.AgentRecord, rankScore float64) *agentmeshv1.AgentEndpoint {
+	return &agentmeshv1.AgentEndpoint{
+		AgentId:            a.AgentID,
+		AgentType:          a.AgentType,
+		EndpointUrl:        a.EndpointURL,
+		Capabilities:       a.Capabilities,
+		EstimatedLatencyMs: a.LatencyEWMA,
+		SuccessRate:        a.SuccessRate,
+		CostScore:          a.CostPerReq,
+		RankScore:          rankScore,
+		OrgId:              a.OrgID,
+		Healthy:            a.Healthy,
+		Persistent:         registry.IsPersistentRegistration(a),
+	}
 }
 
 func (s *Server) RouteRequest(ctx context.Context, req *agentmeshv1.RoutePayload) (*agentmeshv1.RouteResponse, error) {
@@ -140,16 +167,51 @@ func (s *Server) RouteRequest(ctx context.Context, req *agentmeshv1.RoutePayload
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "list: %v", err)
 	}
-	ranked := s.engine.Rank(router.RankInput{
-		OrgID:      req.GetOrgId(),
-		Capability: req.GetCapability(),
-		Strategy:   router.Strategy(strategy),
-		Agents:     agents,
-	})
-	ranked = router.FilterByFallbackTypes(ranked, req.GetFallbackAgentTypes())
-	if len(ranked) == 0 {
-		return nil, status.Error(codes.NotFound, "no route")
+
+	pinned := false
+	var ranked []router.Ranked
+
+	if pinID := strings.TrimSpace(req.GetDestinationAgentId()); pinID != "" {
+		rec := router.FindAgent(agents, pinID)
+		if rec == nil {
+			return nil, status.Errorf(codes.NotFound, "pinned agent %s not found", pinID)
+		}
+		if !req.GetForcePin() {
+			if !rec.Healthy {
+				return nil, status.Errorf(codes.FailedPrecondition, "pinned agent %s is unhealthy", pinID)
+			}
+			if req.GetCapability() != "" && !registry.HasCapability(*rec, req.GetCapability()) {
+				return nil, status.Errorf(codes.InvalidArgument, "pinned agent %s lacks capability %s", pinID, req.GetCapability())
+			}
+		}
+		cbCfg := policy.ResolveCircuit(pol, rec.AgentID, rec.AgentType)
+		ok, _, cbErr := s.breaker.AllowRequestWithConfig(ctx, req.GetOrgId(), rec.AgentID, cbCfg)
+		if cbErr == nil && !ok {
+			if !req.GetPinFailover() {
+				return nil, status.Errorf(codes.Unavailable, "circuit open for pinned agent %s", pinID)
+			}
+			// Fall through to normal ranking.
+		} else {
+			ranked = []router.Ranked{{Agent: *rec, Score: 1e9}}
+			pinned = true
+			strategy = "pin"
+		}
 	}
+
+	if !pinned {
+		ranked = s.engine.Rank(router.RankInput{
+			OrgID:      req.GetOrgId(),
+			Capability: req.GetCapability(),
+			Strategy:   router.Strategy(strategy),
+			Agents:     agents,
+		})
+		ranked = router.FilterByFallbackTypes(ranked, req.GetFallbackAgentTypes())
+		ranked = router.PreferAgentIDs(ranked, req.GetPreferAgentIds())
+		if len(ranked) == 0 {
+			return nil, status.Error(codes.NotFound, "no route")
+		}
+	}
+
 	var chosen router.Ranked
 	for _, r := range ranked {
 		cbCfg := policy.ResolveCircuit(pol, r.Agent.AgentID, r.Agent.AgentType)
@@ -169,6 +231,9 @@ func (s *Server) RouteRequest(ctx context.Context, req *agentmeshv1.RoutePayload
 		"x-agentmesh-dest-agent":       chosen.Agent.AgentID,
 		"x-agentmesh-routing-strategy": strategy,
 	}
+	if pinned {
+		headers["x-agentmesh-pin"] = "true"
+	}
 	for k, v := range req.GetHeaders() {
 		headers[k] = v
 	}
@@ -177,11 +242,7 @@ func (s *Server) RouteRequest(ctx context.Context, req *agentmeshv1.RoutePayload
 		if i > 4 {
 			break
 		}
-		chain = append(chain, &agentmeshv1.AgentEndpoint{
-			AgentId:     r.Agent.AgentID,
-			AgentType:   r.Agent.AgentType,
-			EndpointUrl: r.Agent.EndpointURL,
-		})
+		chain = append(chain, toEndpoint(r.Agent, r.Score))
 	}
 	timeout := pol.Routing.DefaultTimeoutMs
 	retries := pol.Routing.DefaultMaxRetries

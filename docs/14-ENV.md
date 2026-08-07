@@ -60,14 +60,17 @@ Configuration is loaded from environment variables in `internal/config/config.go
 
 Development uses in-memory key `agentmesh-dev-key` for org `default` when wired in main.
 
-## Model provider secrets (inference)
+## Model provider secrets (Keymint)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AGENTMESH_SECRETS_KEY` | falls back to `AGENTMESH_DEV_API_KEY` | Master key for AES-GCM encryption of org provider API keys in etcd |
+| `KEYMINT_BASE_URL` | `` | Keymint API base (required for Models/Chat) |
+| `KEYMINT_API_KEY` | `` | Bearer token for Keymint protected APIs |
+| `KEYMINT_TEAM_ID` | `` | Team UUID that owns AgentMesh virtual keys |
+| `AGENTMESH_SECRETS_KEY` | falls back to `AGENTMESH_DEV_API_KEY` | AES-GCM key for encrypting Keymint virtual-key **bindings** in etcd (not provider plaintext) |
 | `MODELS_CATALOG_PATH` | `deploy/models.yaml` (or `/etc/agentmesh/models.yaml` in containers) | Providers + models YAML catalog |
 
-Org keys are stored via `PUT /v1/secrets/providers/{id}` (ids from YAML) and used by `POST /v1/chat`. Catalog: [`deploy/models.yaml`](../deploy/models.yaml). See [23-MODEL-INFERENCE.md](23-MODEL-INFERENCE.md).
+`PUT /v1/secrets/providers/{id}` creates a Keymint provider-key + virtual key; chat uses Keymint `POST /v1/proxy/chat/completions`. Catalog: [`deploy/models.yaml`](../deploy/models.yaml). See [23-MODEL-INFERENCE.md](23-MODEL-INFERENCE.md).
 
 ## GuardLoop (optional)
 

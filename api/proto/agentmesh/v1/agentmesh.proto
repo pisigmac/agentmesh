@@ -40,6 +40,7 @@ message DiscoveryQuery {
   double max_cost = 3;
   string routing_strategy = 4;
   int32 limit = 5;
+  bool include_unhealthy = 6;
 }
 
 message AgentEndpoint {
@@ -52,6 +53,8 @@ message AgentEndpoint {
   double cost_score = 7;
   double rank_score = 8;
   string org_id = 9;
+  bool healthy = 10;
+  bool persistent = 11;
 }
 
 message RoutePayload {
@@ -62,6 +65,14 @@ message RoutePayload {
   repeated string fallback_agent_types = 5;
   bytes payload_hint = 6;
   map<string, string> headers = 7;
+  // Hard pin: route to this agent when set (see force_pin / pin_failover).
+  string destination_agent_id = 8;
+  // Soft preference: move these eligible agents to the front of the ranked list.
+  repeated string prefer_agent_ids = 9;
+  // When true, allow pin even if unhealthy or missing capability.
+  bool force_pin = 10;
+  // When true and the pinned agent's circuit is open, fall back to normal ranking.
+  bool pin_failover = 11;
 }
 
 message RouteResponse {

@@ -1,6 +1,7 @@
 package inference
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -10,18 +11,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentmesh/agentmesh/internal/keymint"
 	"github.com/agentmesh/agentmesh/internal/models"
-	"github.com/agentmesh/agentmesh/internal/secrets"
 )
 
 type Message struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
-}
-
-type ChatRequest struct {
-	Model    string    `json:"model"`
-	Messages []Message `json:"messages"`
 }
 
 type ChatResult struct {
@@ -52,46 +48,57 @@ func NewClient() *Client {
 	return &Client{HTTP: &http.Client{Timeout: 90 * time.Second}}
 }
 
-func (c *Client) Chat(ctx context.Context, catalog *models.Catalog, m models.Model, sec secrets.ProviderSecret, msgs []Message, route *RouteInfo) (ChatResult, error) {
-	prov, ok := catalog.ProviderByID(m.Provider)
-	if !ok {
-		return ChatResult{}, fmt.Errorf("unknown provider %s", m.Provider)
+// ChatViaKeymint calls Keymint's OpenAI-compatible proxy with a virtual key.
+func (c *Client) ChatViaKeymint(ctx context.Context, km *keymint.Client, virtualKey string, m models.Model, apiModel string, msgs []Message, route *RouteInfo) (ChatResult, error) {
+	if km == nil || !km.Configured() {
+		return ChatResult{}, fmt.Errorf("keymint not configured")
 	}
-	apiModel := m.APIModel
-	if prov.RequiresBaseURL && sec.APIModel != "" {
-		apiModel = sec.APIModel
+	if virtualKey == "" {
+		return ChatResult{}, fmt.Errorf("missing virtual key")
 	}
-	base := strings.TrimRight(sec.BaseURL, "/")
-	if base == "" {
-		base = strings.TrimRight(m.DefaultBaseURL, "/")
+	if apiModel == "" {
+		apiModel = m.APIModel
 	}
-	if base == "" {
-		base = strings.TrimRight(prov.DefaultBaseURL, "/")
+	body := map[string]any{
+		"model":    apiModel,
+		"messages": msgs,
 	}
-	if base == "" && prov.RequiresBaseURL {
-		return ChatResult{}, fmt.Errorf("provider %s requires base_url in secrets", prov.ID)
-	}
-
-	var (
-		answer string
-		usage  map[string]any
-		err    error
-	)
-	switch prov.APIStyle {
-	case models.APIStyleAnthropic:
-		answer, usage, err = c.anthropic(ctx, base, sec.APIKey, apiModel, msgs)
-	default:
-		answer, usage, err = c.openaiCompat(ctx, base, sec.APIKey, apiModel, msgs)
-	}
+	raw, _ := json.Marshal(body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, km.ProxyChatURL(), bytes.NewReader(raw))
 	if err != nil {
 		return ChatResult{}, err
 	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+virtualKey)
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return ChatResult{}, err
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 300 {
+		return ChatResult{}, fmt.Errorf("keymint proxy %d: %s", resp.StatusCode, truncate(string(b), 400))
+	}
+	var parsed struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+		Usage map[string]any `json:"usage"`
+	}
+	if err := json.Unmarshal(b, &parsed); err != nil {
+		return ChatResult{}, err
+	}
+	if len(parsed.Choices) == 0 {
+		return ChatResult{}, fmt.Errorf("no choices in keymint proxy response")
+	}
 	out := ChatResult{
-		Answer:   answer,
+		Answer:   parsed.Choices[0].Message.Content,
 		ModelID:  m.ID,
 		Provider: m.Provider,
 		APIModel: apiModel,
-		Usage:    usage,
+		Usage:    parsed.Usage,
 	}
 	if route != nil {
 		out.DestinationAgentID = route.DestinationAgentID
@@ -103,112 +110,75 @@ func (c *Client) Chat(ctx context.Context, catalog *models.Catalog, m models.Mod
 	return out, nil
 }
 
-func (c *Client) openaiCompat(ctx context.Context, base, apiKey, model string, msgs []Message) (string, map[string]any, error) {
-	if base == "" {
-		base = "https://api.openai.com/v1"
+// StreamTokenHandler is called for each text delta from a streaming chat.
+type StreamTokenHandler func(text string) error
+
+// ChatStreamViaKeymint streams OpenAI-compatible SSE from Keymint proxy.
+func (c *Client) ChatStreamViaKeymint(ctx context.Context, km *keymint.Client, virtualKey string, m models.Model, apiModel string, msgs []Message, onToken StreamTokenHandler) (map[string]any, error) {
+	if km == nil || !km.Configured() {
+		return nil, fmt.Errorf("keymint not configured")
+	}
+	if apiModel == "" {
+		apiModel = m.APIModel
 	}
 	body := map[string]any{
-		"model":    model,
+		"model":    apiModel,
 		"messages": msgs,
+		"stream":   true,
 	}
 	raw, _ := json.Marshal(body)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/chat/completions", bytes.NewReader(raw))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, km.ProxyChatURL(), bytes.NewReader(raw))
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-	resp, err := c.HTTP.Do(req)
+	req.Header.Set("Authorization", "Bearer "+virtualKey)
+	req.Header.Set("Accept", "text/event-stream")
+
+	httpClient := &http.Client{Timeout: 0} // stream until cancel
+	resp, err := httpClient.Do(req)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 	defer resp.Body.Close()
-	b, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 300 {
-		return "", nil, fmt.Errorf("openai-compatible %d: %s", resp.StatusCode, truncate(string(b), 400))
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("keymint proxy stream %d: %s", resp.StatusCode, truncate(string(b), 400))
 	}
-	var parsed struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-		Usage map[string]any `json:"usage"`
-	}
-	if err := json.Unmarshal(b, &parsed); err != nil {
-		return "", nil, err
-	}
-	if len(parsed.Choices) == 0 {
-		return "", nil, fmt.Errorf("no choices in provider response")
-	}
-	return parsed.Choices[0].Message.Content, parsed.Usage, nil
-}
 
-func (c *Client) anthropic(ctx context.Context, base, apiKey, model string, msgs []Message) (string, map[string]any, error) {
-	if base == "" {
-		base = "https://api.anthropic.com"
-	}
-	var system string
-	var converted []map[string]string
-	for _, m := range msgs {
-		if m.Role == "system" {
-			if system != "" {
-				system += "\n"
-			}
-			system += m.Content
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	var usage map[string]any
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data:") {
 			continue
 		}
-		role := m.Role
-		if role != "assistant" {
-			role = "user"
+		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if payload == "[DONE]" {
+			break
 		}
-		converted = append(converted, map[string]string{"role": role, "content": m.Content})
-	}
-	body := map[string]any{
-		"model":      model,
-		"max_tokens": 2048,
-		"messages":   converted,
-	}
-	if system != "" {
-		body["system"] = system
-	}
-	raw, _ := json.Marshal(body)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/v1/messages", bytes.NewReader(raw))
-	if err != nil {
-		return "", nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", apiKey)
-	req.Header.Set("anthropic-version", "2023-06-01")
-	resp, err := c.HTTP.Do(req)
-	if err != nil {
-		return "", nil, err
-	}
-	defer resp.Body.Close()
-	b, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode >= 300 {
-		return "", nil, fmt.Errorf("anthropic %d: %s", resp.StatusCode, truncate(string(b), 400))
-	}
-	var parsed struct {
-		Content []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		} `json:"content"`
-		Usage map[string]any `json:"usage"`
-	}
-	if err := json.Unmarshal(b, &parsed); err != nil {
-		return "", nil, err
-	}
-	var out strings.Builder
-	for _, part := range parsed.Content {
-		if part.Type == "text" || part.Text != "" {
-			out.WriteString(part.Text)
+		var chunk struct {
+			Choices []struct {
+				Delta struct {
+					Content string `json:"content"`
+				} `json:"delta"`
+			} `json:"choices"`
+			Usage map[string]any `json:"usage"`
+		}
+		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
+			continue
+		}
+		if chunk.Usage != nil {
+			usage = chunk.Usage
+		}
+		if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
+			if err := onToken(chunk.Choices[0].Delta.Content); err != nil {
+				return usage, err
+			}
 		}
 	}
-	if out.Len() == 0 {
-		return "", nil, fmt.Errorf("empty anthropic response")
-	}
-	return out.String(), parsed.Usage, nil
+	return usage, scanner.Err()
 }
 
 func truncate(s string, n int) string {

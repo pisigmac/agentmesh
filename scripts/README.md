@@ -36,7 +36,9 @@ REMOVE_VOLUMES=1 ./scripts/stop-all.sh
 ./scripts/stop-local.sh
 ```
 
-Environment overrides: see [`common.sh`](common.sh) and [`deploy/ports.env`](../deploy/ports.env) (`AGENTMESH_DEV_API_KEY`, `CONTROL_PLANE_URL`, etc.).
+Environment overrides: see [`common.sh`](common.sh) and [`deploy/ports.env`](../deploy/ports.env) (`AGENTMESH_DEV_API_KEY`, `CONTROL_PLANE_URL`, `KEYMINT_*`, etc.).
+
+**Agent leases:** non-persistent agents should use CLI `-keepalive` so they do not vanish after TTL; seed/catalog agents use `-persistent` (see `seed-all-agents.sh`).
 
 **Manual QA:** full step-by-step guide in [`docs/21-MANUAL-TESTING.md`](../docs/21-MANUAL-TESTING.md).
 
