@@ -7,9 +7,11 @@ Planned enhancements beyond the current 0.1.x control/data plane split. Timeline
 ## Q3 — Control plane hardening
 
 - Native auth shipped (JWT sessions + org API keys + RBAC) — see [`FUTURE_PLAN.md`](../FUTURE_PLAN.md) E5
+- Production soft spots (post Phase B): see [`FUTURE_PLAN.md` §7.1](../FUTURE_PLAN.md) — especially **E21** (`default` org isolation) and **E22** (ops/SLA maturity)
+- Dataplane auth + Stripe webhooks/dunning (E11 follow-ups)
+- Live `LatencyEWMA` writers from dataplane (E7 follow-up)
 - mTLS between data plane and agent endpoints (opt-in)
-- Separate Helm templates for data plane Deployment + HPA
-- Optional later: password reset email, MFA
+- Optional later: password reset email, MFA; multi-chart Helm split
 
 ## Q4 — Routing intelligence
 

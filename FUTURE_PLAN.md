@@ -168,7 +168,34 @@ AgentMesh today provides:
 
 **Shipped (MVP slice):** Helm templates for CP, DP, and frontend with ClusterIP Services, PDB + gated HPA, dual ServiceMonitors; staging overlay `values-staging.yaml`. Successful `RouteRequest` writes ClickHouse `billing_events` and posts Stripe Billing Meter Events when `STRIPE_ENABLED` + customer map are set (`internal/billing`). REST enforces principal org on body/query/`/orgs/{org}/keys*` (workspace alias = org; conflicting headers rejected). See `ops/01-PAYMENTS.md` and `ops/08-STAGING.md`.
 
-**Follow-ups:** true multi-chart repo split; Stripe webhooks/dunning; dataplane auth.
+**Follow-ups:** true multi-chart repo split; Stripe webhooks/dunning; dataplane auth; tighten `default` org semantics (see E21).
+
+#### E21 — `default` org isolation (no cross-tenant aggregation)
+
+**Problem:** Org `default` currently aggregates agents from all tenants in discover/list paths. Useful for demos; unsafe as a multi-tenant production default.
+
+**Plan:**
+
+- Make aggregation opt-in (`AGGREGATE_DEFAULT_ORG=true` or discover flag) and **off** when `ENV=production`
+- Document that `default` is a real tenant (or rename demo org) — never a silent union of all orgs
+- Tests: org A cannot see org B agents via `default` when aggregation is disabled
+- UI: stop implying “default = all agents” in production mode
+
+**Acceptance:** With aggregation off, discover scoped to `default` returns only agents registered under `default`.
+
+#### E22 — Ops / SLA maturity (load, chaos, burn-rate)
+
+**Problem:** Design-partner QA is still manual-heavy (`21-MANUAL-TESTING.md`); chaos/load coverage is thin; no published SLO/SLA story.
+
+**Plan:**
+
+- Expand `tests/chaos` beyond failover (etcd partition, Redis slow, GuardLoop timeout already sketched)
+- CI or staging job: `tests/load/smoke.sh` against compose; document p95 route latency budget
+- Prometheus burn-rate alerts for `agentmesh_route_total` / SLO rejects (extend `ops/monitoring/prometheus-rules.yml`)
+- Short `ops/11-SLO.md`: availability target for control-plane `/ready`, route error budget, on-call notes
+- Reduce manual QA to a smoke subset + automated regression for pin/auth/failover/audit
+
+**Acceptance:** Staging runbook lists SLO burn alerts; chaos + load smoke runnable from CI or monthly cron; `ops/11-SLO.md` exists.
 
 #### E12 — MCP and tool surface
 
@@ -206,6 +233,8 @@ AgentMesh today provides:
 | E18 | mTLS to agents | Opt-in after auth story is solid |
 | E19 | Weighted multi-objective routing | latency + cost + score weights in policy |
 | E20 | Terraform module | Cloud bring-up for etcd/Redis/CH + Helm |
+| E21 | `default` org isolation | No silent cross-tenant aggregation in prod |
+| E22 | Ops / SLA maturity | Load + chaos + burn-rate alerts + `ops/11-SLO.md` |
 
 ---
 
@@ -318,6 +347,26 @@ E15–E20 as demand warrants; prefer customer pull over speculative build.
 | Secret leakage via UI/logs | Never return raw keys; audit; no provider keys in localStorage |
 | Scope creep into full orchestration | Explicit non-goals; integrate frameworks via SDK/MCP |
 | Provider API churn | YAML catalog + OpenAI-compat style; import from KubeMind |
+| Demo conveniences leak into prod tenancy | E21 — disable `default` aggregation in production |
+| Overclaiming “production-grade” | Track soft spots below; ship E11 follow-ups + E22 before SaaS GA |
+
+---
+
+## 7.1 Production soft spots (post Phase B)
+
+Honest gaps between **design-partner ready** and **unattended multi-tenant production**. Not blockers for demos; blockers for SaaS GA.
+
+| Soft spot | Status in plan | Next work |
+|-----------|----------------|-----------|
+| Multi-tenant edges: `default` aggregates all agents | **Gap → E21** | Opt-in aggregation; off in production |
+| Dataplane not fully auth’d like REST API | E11 follow-up | Bearer/mTLS on `/v1/proxy/*` |
+| Metering MVP (CH + optional Stripe meter; no webhooks/dunning) | E11 follow-up | Stripe webhooks, dunning, reconciliation job |
+| Live latency/cost feedback incomplete (`LatencyEWMA` rarely written) | E7 follow-up | Dataplane/CP writers after proxy outcomes |
+| Score path often fixture / GuardLoop-optional | Documented E9 behavior | Staging GuardLoop path; Redis score cache (see `10-FUTURE`) |
+| Helm is one chart (good enough), not multi-chart SaaS | E11 follow-up | Optional chart split CP / DP / frontend |
+| Ops maturity: manual QA heavy; chaos/load light; no SLA story | **Gap → E22** | Chaos/load automation, burn-rate alerts, `ops/11-SLO.md` |
+
+**Bar for “production-grade” claim:** E21 + dataplane auth + Stripe webhooks path + LatencyEWMA writers + E22 smoke/SLO doc — then design-partner → limited GA.
 
 ---
 
@@ -335,10 +384,11 @@ E15–E20 as demand warrants; prefer customer pull over speculative build.
 
 ## 9. Immediate next actions
 
-1. Phase A core (pin, Keymint secrets, stream, health UX) is implemented; keep `21` / `22` / `23` current.
-2. Phase A + Phase B (auth, audit, E7, E9, E11) shipped. Next: design-partner dry-run of `docs/21-MANUAL-TESTING.md`; Phase C (SDKs / MCP) as demand warrants.
-3. Run design-partner demo script from updated `21-MANUAL-TESTING.md`.
-4. Revisit positioning website copy: **mesh first**, inference second.
+1. Phase A + Phase B MVP shipped; keep `21` / `22` / `23` / Helm / payments docs current.
+2. Design-partner dry-run of `docs/21-MANUAL-TESTING.md` (pin, stream, health, failover, auth, audit).
+3. Production hardening before SaaS GA: **E21** (`default` org), E11 follow-ups (dataplane auth, Stripe webhooks/dunning, multi-chart), E7 LatencyEWMA writers, **E22** (ops/SLO).
+4. Phase C (SDKs / MCP) as customer demand warrants.
+5. Revisit positioning website copy: **mesh first**, inference second.
 
 ---
 
