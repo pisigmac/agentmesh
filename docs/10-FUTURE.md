@@ -7,11 +7,9 @@ Planned enhancements beyond the current 0.1.x control/data plane split. Timeline
 ## Q3 — Control plane hardening
 
 - Native auth shipped (JWT sessions + org API keys + RBAC) — see [`FUTURE_PLAN.md`](../FUTURE_PLAN.md) E5
-- Production soft spots (post Phase B): see [`FUTURE_PLAN.md` §7.1](../FUTURE_PLAN.md) — especially **E21** (`default` org isolation) and **E22** (ops/SLA maturity)
-- Dataplane auth + Stripe webhooks/dunning (E11 follow-ups)
-- Live `LatencyEWMA` writers from dataplane (E7 follow-up)
+- Production soft spots baseline shipped: **E21**, dataplane Bearer auth, Stripe webhooks/dunning, LatencyEWMA writers, **E22** (`ops/11-SLO.md` + burn-rate alerts) — see [`FUTURE_PLAN.md` §7.1](../FUTURE_PLAN.md)
 - mTLS between data plane and agent endpoints (opt-in)
-- Optional later: password reset email, MFA; multi-chart Helm split
+- Optional later: password reset email, MFA; multi-chart Helm split; Stripe reconciliation job
 
 ## Q4 — Routing intelligence
 

@@ -14,8 +14,11 @@ import (
 
 const defaultLeaseTTL = 30
 
-// DefaultOrgID is the platform org; discovery and routing include agents from every org.
+// DefaultOrgID is a normal tenant org id. Cross-tenant aggregation for this id is opt-in (E21).
 const DefaultOrgID = "default"
+
+// DefaultLatencyEWMAAlpha blends new proxy samples into LatencyEWMA.
+const DefaultLatencyEWMAAlpha = 0.3
 
 type AgentRecord struct {
 	OrgID        string            `json:"org_id"`
@@ -33,9 +36,29 @@ type AgentRecord struct {
 }
 
 type Store struct {
-	client   *clientv3.Client
-	prefix   string
-	leaseTTL int
+	client              *clientv3.Client
+	prefix              string
+	leaseTTL            int
+	aggregateDefaultOrg bool
+}
+
+// ShouldAggregateDefault reports whether ListByOrg should union all tenants for orgID.
+func ShouldAggregateDefault(orgID string, aggregateEnabled bool) bool {
+	return orgID == DefaultOrgID && aggregateEnabled
+}
+
+// ApplyLatencyEWMA returns the updated EWMA for a new sample (milliseconds).
+func ApplyLatencyEWMA(prev, sampleMs, alpha float64) float64 {
+	if sampleMs < 0 {
+		sampleMs = 0
+	}
+	if alpha <= 0 || alpha > 1 {
+		alpha = DefaultLatencyEWMAAlpha
+	}
+	if prev <= 0 {
+		return sampleMs
+	}
+	return alpha*sampleMs + (1-alpha)*prev
 }
 
 func NewStore(endpoints []string, prefix string, leaseTTLSeconds int) (*Store, error) {
@@ -49,7 +72,22 @@ func NewStore(endpoints []string, prefix string, leaseTTLSeconds int) (*Store, e
 	if err != nil {
 		return nil, err
 	}
-	return &Store{client: cli, prefix: strings.TrimSuffix(prefix, "/"), leaseTTL: leaseTTLSeconds}, nil
+	return &Store{
+		client:              cli,
+		prefix:              strings.TrimSuffix(prefix, "/"),
+		leaseTTL:            leaseTTLSeconds,
+		aggregateDefaultOrg: true, // demo-friendly until SetAggregateDefaultOrg
+	}, nil
+}
+
+// SetAggregateDefaultOrg controls E21 cross-tenant aggregation for org "default".
+func (s *Store) SetAggregateDefaultOrg(enabled bool) {
+	s.aggregateDefaultOrg = enabled
+}
+
+// AggregateDefaultOrg reports the current aggregation flag.
+func (s *Store) AggregateDefaultOrg() bool {
+	return s.aggregateDefaultOrg
 }
 
 func IsPersistentRegistration(rec AgentRecord) bool {
@@ -137,11 +175,42 @@ func (s *Store) Get(ctx context.Context, orgID, agentID string) (*AgentRecord, e
 }
 
 func (s *Store) ListByOrg(ctx context.Context, orgID string) ([]AgentRecord, error) {
-	if orgID == DefaultOrgID {
+	if ShouldAggregateDefault(orgID, s.aggregateDefaultOrg) {
 		return s.ListAllAgents(ctx)
 	}
 	prefix := path.Join(s.prefix, "orgs", orgID, "agents") + "/"
 	return s.listAgentsPrefix(ctx, prefix)
+}
+
+// RecordRouteOutcome updates LatencyEWMA (and lightly SuccessRate) after a proxy attempt.
+func (s *Store) RecordRouteOutcome(ctx context.Context, orgID, agentID string, latencyMs float64, success bool) (*AgentRecord, error) {
+	rec, err := s.Get(ctx, orgID, agentID)
+	if err != nil {
+		return nil, err
+	}
+	if rec == nil {
+		return nil, fmt.Errorf("agent not found")
+	}
+	rec.LatencyEWMA = ApplyLatencyEWMA(rec.LatencyEWMA, latencyMs, DefaultLatencyEWMAAlpha)
+	if rec.SuccessRate <= 0 {
+		rec.SuccessRate = 1
+	}
+	const srAlpha = 0.2
+	sample := 0.0
+	if success {
+		sample = 1.0
+	}
+	rec.SuccessRate = srAlpha*sample + (1-srAlpha)*rec.SuccessRate
+	rec.UpdatedAt = time.Now().UTC()
+	data, err := json.Marshal(rec)
+	if err != nil {
+		return nil, err
+	}
+	_, err = s.client.Put(ctx, agentKey(s.prefix, orgID, agentID), string(data))
+	if err != nil {
+		return nil, err
+	}
+	return rec, nil
 }
 
 func (s *Store) ListAllAgents(ctx context.Context) ([]AgentRecord, error) {

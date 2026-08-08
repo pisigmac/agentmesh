@@ -19,12 +19,13 @@ Stripe integration lives in `internal/billing`. Successful control-plane routes 
 
 | Env | Purpose |
 |-----|---------|
-| `STRIPE_ENABLED` | Master switch |
+| `STRIPE_ENABLED` | Master switch for outbound meter events |
 | `STRIPE_SECRET_KEY` | API key |
 | `STRIPE_METER_EVENT_NAME` | Meter event name (default `agentmesh_routes`) |
 | `STRIPE_ORG_CUSTOMERS` | `org:cus_…` CSV map |
+| `STRIPE_WEBHOOK_SECRET` | `whsec_…` for inbound webhooks |
 
-Helm: `stripe.enabled`, `stripe.secretKeyExistingSecret`, `stripe.orgCustomers` in [`deploy/helm/agentmesh/values.yaml`](../deploy/helm/agentmesh/values.yaml).
+Helm: `stripe.enabled`, `stripe.secretKeyExistingSecret`, `stripe.webhookSecretExistingSecret`, `stripe.orgCustomers` in [`deploy/helm/agentmesh/values.yaml`](../deploy/helm/agentmesh/values.yaml).
 
 ## Idempotency
 
@@ -38,7 +39,20 @@ Always set `stripe_event_id` / Stripe `identifier` to `route:{trace_id}`. Retrie
 | 401/403 from Stripe | Rotate `secret_key` in Secret |
 | 400 invalid meter | Align `STRIPE_METER_EVENT_NAME` with dashboard meter |
 
-Webhook handlers / dunning are follow-ups (not in this MVP).
+## Webhooks and dunning
+
+Endpoint: `POST /v1/billing/stripe/webhook` (no Bearer; verified via `Stripe-Signature` + `STRIPE_WEBHOOK_SECRET`).
+
+| Stripe event | Org billing status | Route effect |
+|--------------|--------------------|--------------|
+| `invoice.payment_failed` | `past_due` | Soft: route allowed + `x-agentmesh-billing-warning` |
+| `invoice.paid` / `invoice.payment_succeeded` | `ok` | Clear warning |
+| `customer.subscription.deleted` (or canceled) | `blocked` | Hard reject (`FailedPrecondition`) |
+| `customer.subscription.updated` | maps by Stripe status | See table above |
+
+Map customer → org via Stripe metadata `agentmesh_org_id` or `STRIPE_ORG_CUSTOMERS`. Inspect: `GET /v1/orgs/{org}/billing` (admin).
+
+Point Stripe CLI / dashboard webhook at the control-plane URL. Reconciliation still uses the SQL below.
 
 ## Manual credit
 

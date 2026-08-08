@@ -28,11 +28,12 @@ type Server struct {
 	breaker  *circuit.Breaker
 	limiter  *ratelimit.Limiter
 	meter    *billing.Meter
+	billing  *billing.StatusStore
 	cfg      config.Config
 }
 
-func New(reg *registry.Store, policies *policy.Store, engine *router.Engine, breaker *circuit.Breaker, limiter *ratelimit.Limiter, cfg config.Config, meter *billing.Meter) *Server {
-	return &Server{reg: reg, policies: policies, engine: engine, breaker: breaker, limiter: limiter, meter: meter, cfg: cfg}
+func New(reg *registry.Store, policies *policy.Store, engine *router.Engine, breaker *circuit.Breaker, limiter *ratelimit.Limiter, cfg config.Config, meter *billing.Meter, billingStatus *billing.StatusStore) *Server {
+	return &Server{reg: reg, policies: policies, engine: engine, breaker: breaker, limiter: limiter, meter: meter, billing: billingStatus, cfg: cfg}
 }
 
 func (s *Server) RegisterAgent(ctx context.Context, req *agentmeshv1.AgentRegistration) (*agentmeshv1.RegistrationAck, error) {
@@ -166,6 +167,17 @@ func (s *Server) RouteRequest(ctx context.Context, req *agentmeshv1.RoutePayload
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "policy: %v", err)
 	}
+	var billingWarn string
+	if s.billing != nil {
+		st, berr := s.billing.Get(ctx, req.GetOrgId())
+		if berr == nil {
+			if block, warn := billing.EnforceRoute(st); block != "" {
+				return nil, status.Error(codes.FailedPrecondition, block)
+			} else {
+				billingWarn = warn
+			}
+		}
+	}
 	if ok, _ := s.limiter.Allow(ctx, req.GetOrgId(), "route", pol.RateLimit.RoutesPerMinute, time.Minute); !ok {
 		return nil, status.Error(codes.ResourceExhausted, "org route rate limit exceeded")
 	}
@@ -275,6 +287,9 @@ func (s *Server) RouteRequest(ctx context.Context, req *agentmeshv1.RoutePayload
 	if pinned {
 		headers["x-agentmesh-pin"] = "true"
 	}
+	if billingWarn != "" {
+		headers["x-agentmesh-billing-warning"] = billingWarn
+	}
 	if strategy == string(router.StrategyScoreBased) || rankMeta.StrategyUsed == string(router.StrategyScoreBased) {
 		if rankMeta.Provider != "" {
 			headers["x-agentmesh-score-provider"] = rankMeta.Provider
@@ -326,6 +341,22 @@ func (s *Server) ReportHealth(ctx context.Context, req *agentmeshv1.HealthStatus
 		return &agentmeshv1.HealthAck{Accepted: false}, nil
 	}
 	return &agentmeshv1.HealthAck{Accepted: true}, nil
+}
+
+func (s *Server) ReportRouteOutcome(ctx context.Context, req *agentmeshv1.RouteOutcome) (*agentmeshv1.RouteOutcomeAck, error) {
+	org := strings.TrimSpace(req.GetOrgId())
+	agentID := strings.TrimSpace(req.GetAgentId())
+	if org == "" || agentID == "" {
+		return nil, status.Error(codes.InvalidArgument, "org_id and agent_id required")
+	}
+	rec, err := s.reg.RecordRouteOutcome(ctx, org, agentID, req.GetLatencyMs(), req.GetSuccess())
+	if err != nil {
+		return nil, status.Errorf(codes.NotFound, "outcome: %v", err)
+	}
+	return &agentmeshv1.RouteOutcomeAck{
+		Accepted:      true,
+		LatencyEwmaMs: rec.LatencyEWMA,
+	}, nil
 }
 
 func (s *Server) GetCircuitState(ctx context.Context, req *agentmeshv1.CircuitQuery) (*agentmeshv1.CircuitState, error) {

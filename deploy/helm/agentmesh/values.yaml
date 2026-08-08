@@ -1,5 +1,9 @@
 replicaCount: 2
 
+env: development
+# E21: forced off when env=production regardless of this flag
+aggregateDefaultOrg: true
+
 controlPlane:
   image: agentmesh/control-plane:0.1.0
   grpcPort: 9090
@@ -12,6 +16,7 @@ dataPlane:
   mode: gateway
   replicas: 1
   failover: true
+  authEnabled: true
   resources: {}
 
 frontend:
@@ -60,5 +65,7 @@ stripe:
   meterEventName: agentmesh_routes
   # Existing Secret with key secret_key (sk_test_… / sk_live_…)
   secretKeyExistingSecret: ""
+  # Optional Secret key webhook_secret (whsec_…)
+  webhookSecretExistingSecret: ""
   # Optional: org_id:cus_xxx,org2:cus_yyy
   orgCustomers: ""

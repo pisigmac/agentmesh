@@ -10,20 +10,21 @@ import (
 type Config struct {
 	Env string
 
-	ControlPlane ControlPlaneConfig
-	DataPlane    DataPlaneConfig
-	Etcd         EtcdConfig
-	Redis        RedisConfig
-	ClickHouse   ClickHouseConfig
-	Auth         AuthConfig
-	Secrets      SecretsConfig
-	Keymint      KeymintConfig
-	Models       ModelsConfig
-	GuardLoop    GuardLoopConfig
-	Score        ScoreProviderConfig
-	TraceLens    TraceLensConfig
-	Circuit      CircuitConfig
-	Stripe       StripeConfig
+	ControlPlane         ControlPlaneConfig
+	DataPlane            DataPlaneConfig
+	Etcd                 EtcdConfig
+	Redis                RedisConfig
+	ClickHouse           ClickHouseConfig
+	Auth                 AuthConfig
+	Secrets              SecretsConfig
+	Keymint              KeymintConfig
+	Models               ModelsConfig
+	GuardLoop            GuardLoopConfig
+	Score                ScoreProviderConfig
+	TraceLens            TraceLensConfig
+	Circuit              CircuitConfig
+	Stripe               StripeConfig
+	AggregateDefaultOrg  bool // E21: when true, ListByOrg("default") unions all tenants (forced false if Env=production)
 }
 
 type StripeConfig struct {
@@ -47,6 +48,7 @@ type DataPlaneConfig struct {
 	MaxRetries    int
 	Failover      bool
 	RouteCacheTTL time.Duration
+	AuthEnabled   bool // require Bearer on /v1/route and /v1/proxy/*
 }
 
 type EtcdConfig struct {
@@ -118,8 +120,14 @@ type CircuitConfig struct {
 }
 
 func Load() Config {
+	env := getenv("ENV", "development")
+	aggregateDefault := getenvBool("AGGREGATE_DEFAULT_ORG", true)
+	if strings.EqualFold(env, "production") {
+		aggregateDefault = false
+	}
 	return Config{
-		Env: getenv("ENV", "development"),
+		Env:                 env,
+		AggregateDefaultOrg: aggregateDefault,
 		ControlPlane: ControlPlaneConfig{
 			GRPCPort: getenvInt("CONTROL_PLANE_GRPC_PORT", 9090),
 			HTTPPort: getenvInt("CONTROL_PLANE_HTTP_PORT", 8080),
@@ -132,6 +140,7 @@ func Load() Config {
 			MaxRetries:    getenvInt("DATAPLANE_MAX_RETRIES", 2),
 			Failover:      getenvBool("DATAPLANE_FAILOVER", true),
 			RouteCacheTTL: time.Duration(getenvInt("DATAPLANE_ROUTE_CACHE_TTL_MS", 500)) * time.Millisecond,
+			AuthEnabled:   getenvBool("DATAPLANE_AUTH_ENABLED", true),
 		},
 		Etcd: EtcdConfig{
 			Endpoints:     strings.Split(getenv("ETCD_ENDPOINTS", "localhost:2379"), ","),

@@ -31,6 +31,8 @@ services:
       - "48080:8080"
       - "49090:9090"
     environment:
+      ENV: ${ENV:-development}
+      AGGREGATE_DEFAULT_ORG: ${AGGREGATE_DEFAULT_ORG:-true}
       ETCD_ENDPOINTS: etcd:2379
       REDIS_ADDR: redis:6379
       CLICKHOUSE_ADDR: clickhouse:9000
@@ -39,6 +41,9 @@ services:
       AGENTMESH_SECRETS_KEY: ${AGENTMESH_SECRETS_KEY:-agentmesh-dev-key}
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-agentmesh-dev-jwt-secret-change-me!!}
       AUTH_ALLOW_REGISTER: ${AUTH_ALLOW_REGISTER:-true}
+      STRIPE_ENABLED: ${STRIPE_ENABLED:-false}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_ORG_CUSTOMERS: ${STRIPE_ORG_CUSTOMERS:-}
       KEYMINT_BASE_URL: ${KEYMINT_BASE_URL:-}
       KEYMINT_API_KEY: ${KEYMINT_API_KEY:-}
       KEYMINT_TEAM_ID: ${KEYMINT_TEAM_ID:-}
@@ -63,9 +68,19 @@ services:
     environment:
       CONTROL_PLANE_ADDR: control-plane:9090
       DATAPLANE_HTTP_PORT: 8081
+      DATAPLANE_AUTH_ENABLED: ${DATAPLANE_AUTH_ENABLED:-true}
+      DATAPLANE_FAILOVER: ${DATAPLANE_FAILOVER:-true}
+      ETCD_ENDPOINTS: etcd:2379
+      REDIS_ADDR: redis:6379
+      CLICKHOUSE_ADDR: clickhouse:9000
+      CLICKHOUSE_DATABASE: agentmesh
+      AGENTMESH_DEV_API_KEY: agentmesh-dev-key
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-agentmesh-dev-jwt-secret-change-me!!}
       TRACELENS_ENABLED: "false"
     depends_on:
       - control-plane
+      - etcd
+      - redis
 
   prometheus:
     image: prom/prometheus:v2.54.0

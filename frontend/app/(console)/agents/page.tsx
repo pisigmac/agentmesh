@@ -99,7 +99,7 @@ export default function AgentsPage() {
               {orgs.map((o) => (
                 <option key={o} value={o}>
                   {o}
-                  {o === "default" ? " (all agents)" : ""}
+                  {o === "default" ? " (demo aggregate when enabled)" : ""}
                 </option>
               ))}
             </select>

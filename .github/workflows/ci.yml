@@ -1,0 +1,30 @@
+name: ci
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.5"
+      - name: Proto
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.35.2
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
+          sudo apt-get update && sudo apt-get install -y protobuf-compiler
+          make proto
+      - name: Vet
+        run: make lint
+      - name: Unit + chaos tests
+        run: go test ./internal/... ./tests/chaos/... -count=1 -timeout 120s
+      - name: Build binaries
+        run: make build
+
+  # Full stack smoke (compose) is documented as a monthly staging cron in ops/11-SLO.md.
+  # Keep PR CI fast and dependency-light.

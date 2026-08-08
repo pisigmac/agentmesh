@@ -170,9 +170,9 @@ AgentMesh today provides:
 
 **Follow-ups:** true multi-chart repo split; Stripe webhooks/dunning; dataplane auth; tighten `default` org semantics (see E21).
 
-#### E21 — `default` org isolation (no cross-tenant aggregation)
+#### E21 — `default` org isolation (no cross-tenant aggregation) — **shipped**
 
-**Problem:** Org `default` currently aggregates agents from all tenants in discover/list paths. Useful for demos; unsafe as a multi-tenant production default.
+**Problem:** Org `default` previously aggregated agents from all tenants in discover/list paths. Useful for demos; unsafe as a multi-tenant production default.
 
 **Plan:**
 
@@ -183,9 +183,9 @@ AgentMesh today provides:
 
 **Acceptance:** With aggregation off, discover scoped to `default` returns only agents registered under `default`.
 
-#### E22 — Ops / SLA maturity (load, chaos, burn-rate)
+#### E22 — Ops / SLA maturity (load, chaos, burn-rate) — **baseline shipped**
 
-**Problem:** Design-partner QA is still manual-heavy (`21-MANUAL-TESTING.md`); chaos/load coverage is thin; no published SLO/SLA story.
+**Problem:** Design-partner QA was manual-heavy (`21-MANUAL-TESTING.md`); chaos/load coverage thin; no published SLO/SLA story.
 
 **Plan:**
 
@@ -358,13 +358,13 @@ Honest gaps between **design-partner ready** and **unattended multi-tenant produ
 
 | Soft spot | Status in plan | Next work |
 |-----------|----------------|-----------|
-| Multi-tenant edges: `default` aggregates all agents | **Gap → E21** | Opt-in aggregation; off in production |
-| Dataplane not fully auth’d like REST API | E11 follow-up | Bearer/mTLS on `/v1/proxy/*` |
-| Metering MVP (CH + optional Stripe meter; no webhooks/dunning) | E11 follow-up | Stripe webhooks, dunning, reconciliation job |
-| Live latency/cost feedback incomplete (`LatencyEWMA` rarely written) | E7 follow-up | Dataplane/CP writers after proxy outcomes |
+| Multi-tenant edges: `default` aggregates all agents | **Shipped E21** | `AGGREGATE_DEFAULT_ORG`; forced off when `ENV=production` |
+| Dataplane not fully auth’d like REST API | **Shipped** (Bearer) | Optional later: mTLS to agents |
+| Metering MVP (CH + optional Stripe meter; no webhooks/dunning) | **Webhooks shipped** | Optional: reconciliation job polish |
+| Live latency/cost feedback incomplete (`LatencyEWMA` rarely written) | **Shipped E7 writers** | Tune alpha / CH mirror as needed |
 | Score path often fixture / GuardLoop-optional | Documented E9 behavior | Staging GuardLoop path; Redis score cache (see `10-FUTURE`) |
 | Helm is one chart (good enough), not multi-chart SaaS | E11 follow-up | Optional chart split CP / DP / frontend |
-| Ops maturity: manual QA heavy; chaos/load light; no SLA story | **Gap → E22** | Chaos/load automation, burn-rate alerts, `ops/11-SLO.md` |
+| Ops maturity: manual QA heavy; chaos/load light; no SLA story | **Shipped E22 baseline** | Expand CI compose smoke when runners allow |
 
 **Bar for “production-grade” claim:** E21 + dataplane auth + Stripe webhooks path + LatencyEWMA writers + E22 smoke/SLO doc — then design-partner → limited GA.
 
@@ -384,11 +384,11 @@ Honest gaps between **design-partner ready** and **unattended multi-tenant produ
 
 ## 9. Immediate next actions
 
-1. Phase A + Phase B MVP shipped; keep `21` / `22` / `23` / Helm / payments docs current.
-2. Design-partner dry-run of `docs/21-MANUAL-TESTING.md` (pin, stream, health, failover, auth, audit).
-3. Production hardening before SaaS GA: **E21** (`default` org), E11 follow-ups (dataplane auth, Stripe webhooks/dunning, multi-chart), E7 LatencyEWMA writers, **E22** (ops/SLO).
+1. Production hardening slice landed (E21, dataplane Bearer auth, LatencyEWMA writers, Stripe webhooks/dunning, E22 SLO/burn-rate/CI). Keep docs current.
+2. Run `./scripts/dry-run-design-partner.sh` + UI rows in `docs/21-MANUAL-TESTING.md` against a live stack before each design-partner demo.
+3. Remaining optional: multi-chart Helm, mTLS to agents, Stripe reconciliation job, compose-in-CI smoke.
 4. Phase C (SDKs / MCP) as customer demand warrants.
-5. Revisit positioning website copy: **mesh first**, inference second.
+5. Positioning website: mesh first (landing refresh on `dev`); keep inference secondary.
 
 ---
 

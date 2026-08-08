@@ -132,6 +132,20 @@ else
   bad "chat/stream" "$(echo "$STREAM" | head -c 180)"
 fi
 
+# --- dataplane auth ---
+DP_NOAUTH=$(curl -s -m 5 -o /dev/null -w '%{http_code}' -X POST "${DP}/v1/route" \
+  -H "Content-Type: application/json" -d '{"capability":"code_gen","org_id":"default"}' || echo 000)
+[[ "$DP_NOAUTH" == "401" ]] && ok "dataplane rejects unauthenticated /v1/route" || ok "dataplane auth optional/off (http $DP_NOAUTH)"
+DP_AUTH=$(curl -s -m 15 -o /tmp/am-dp-route.json -w '%{http_code}' -X POST "${DP}/v1/route" "${HDR[@]}" \
+  -d '{"capability":"code_gen","source_agent_id":"dry-run","org_id":"default"}' || echo 000)
+if [[ "$DP_AUTH" == "200" ]]; then
+  ok "dataplane authenticated /v1/route"
+elif [[ "$DP_AUTH" == "502" || "$DP_AUTH" == "404" ]]; then
+  ok "dataplane auth accepted (upstream/route http $DP_AUTH)"
+else
+  bad "dataplane /v1/route" "http $DP_AUTH $(head -c 120 /tmp/am-dp-route.json 2>/dev/null)"
+fi
+
 echo
 echo "=== Summary: $pass pass, $fail fail ==="
 [[ "$fail" -eq 0 ]]

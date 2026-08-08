@@ -9,6 +9,7 @@ service AgentMesh {
   rpc DiscoverAgents(DiscoveryQuery) returns (stream AgentEndpoint);
   rpc RouteRequest(RoutePayload) returns (RouteResponse);
   rpc ReportHealth(HealthStatus) returns (HealthAck);
+  rpc ReportRouteOutcome(RouteOutcome) returns (RouteOutcomeAck);
   rpc GetCircuitState(CircuitQuery) returns (CircuitState);
 }
 
@@ -95,6 +96,19 @@ message HealthStatus {
 
 message HealthAck {
   bool accepted = 1;
+}
+
+// RouteOutcome is reported by the data plane after a proxy attempt (E7 LatencyEWMA writers).
+message RouteOutcome {
+  string org_id = 1;
+  string agent_id = 2;
+  double latency_ms = 3;
+  bool success = 4;
+}
+
+message RouteOutcomeAck {
+  bool accepted = 1;
+  double latency_ewma_ms = 2;
 }
 
 message CircuitQuery {

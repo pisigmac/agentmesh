@@ -14,6 +14,7 @@ import (
 
 	agentmeshv1 "github.com/agentmesh/agentmesh/gen/agentmesh/v1"
 	"github.com/agentmesh/agentmesh/internal/analytics"
+	"github.com/agentmesh/agentmesh/internal/auth"
 	"github.com/agentmesh/agentmesh/internal/circuit"
 	"github.com/agentmesh/agentmesh/internal/config"
 	"github.com/agentmesh/agentmesh/internal/dataplane"
@@ -69,6 +70,27 @@ func main() {
 	defer conn.Close()
 	cp := agentmeshv1.NewAgentMeshClient(conn)
 
+	var authSvc *auth.Service
+	if cfg.DataPlane.AuthEnabled {
+		authStore, err := auth.NewStore(cfg.Etcd.Endpoints, cfg.Etcd.Prefix)
+		if err != nil {
+			log.Fatal("dataplane auth store", zap.Error(err))
+		}
+		defer authStore.Close()
+		issuer, err := auth.NewTokenIssuer(cfg.Auth.JWTSecret, cfg.Auth.TokenTTLHours)
+		if err != nil {
+			log.Fatal("dataplane auth jwt", zap.Error(err))
+		}
+		authSvc = &auth.Service{
+			Store:          authStore,
+			Tokens:         issuer,
+			DevAPIKeyPlain: cfg.Auth.DevAPIKey,
+		}
+		log.Info("dataplane auth enabled")
+	} else {
+		log.Warn("dataplane auth disabled (DATAPLANE_AUTH_ENABLED=false)")
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte(`{"status":"ok"}`))
@@ -76,10 +98,16 @@ func main() {
 	mux.Handle("/metrics", promhttp.Handler())
 
 	mux.HandleFunc("/v1/route", func(w http.ResponseWriter, r *http.Request) {
+		if !authorizeDP(w, r, authSvc, cfg.DataPlane.AuthEnabled) {
+			return
+		}
 		handleAdvisory(w, r, cp, ch)
 	})
 
 	mux.HandleFunc("/v1/proxy/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorizeDP(w, r, authSvc, cfg.DataPlane.AuthEnabled) {
+			return
+		}
 		handleProxy(w, r, cp, cfg, ch, circ, log)
 	})
 
@@ -91,6 +119,7 @@ func main() {
 			zap.String("mode", cfg.DataPlane.Mode),
 			zap.Bool("failover", cfg.DataPlane.Failover),
 			zap.Int("max_retries", cfg.DataPlane.MaxRetries),
+			zap.Bool("auth", cfg.DataPlane.AuthEnabled),
 		)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatal("serve", zap.Error(err))
@@ -103,6 +132,22 @@ func main() {
 	shCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(shCtx)
+}
+
+func authorizeDP(w http.ResponseWriter, r *http.Request, authSvc *auth.Service, enabled bool) bool {
+	if !enabled || authSvc == nil {
+		return true
+	}
+	p, err := authSvc.Authenticate(r.Context(),
+		r.Header.Get("X-Org-ID"),
+		r.Header.Get("X-Workspace-ID"),
+		r.Header.Get("Authorization"))
+	if err != nil {
+		http.Error(w, `{"error":{"code":"UNAUTHORIZED","message":"bearer required"}}`, http.StatusUnauthorized)
+		return false
+	}
+	*r = *r.WithContext(auth.WithPrincipal(r.Context(), p))
+	return true
 }
 
 func handleAdvisory(w http.ResponseWriter, r *http.Request, cp agentmeshv1.AgentMeshClient, ch *analytics.Store) {
@@ -169,6 +214,7 @@ func handleProxy(w http.ResponseWriter, r *http.Request, cp agentmeshv1.AgentMes
 	})
 	if err != nil {
 		telemetry.ObserveRoute(org, "proxy", "error", time.Since(start))
+		reportOutcome(ctx, cp, org, resp.GetDestinationAgentId(), time.Since(start), false, log)
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -178,6 +224,13 @@ func handleProxy(w http.ResponseWriter, r *http.Request, cp agentmeshv1.AgentMes
 		retries = uint8(result.Attempts - 1)
 	}
 	ok := result.Status > 0 && result.Status < 400
+	dest := resp.GetDestinationAgentId()
+	if result.DestinationID != "" {
+		dest = result.DestinationID
+		resp.DestinationAgentId = result.DestinationID
+	}
+	reportOutcome(ctx, cp, org, dest, time.Since(start), ok && result.Status < 500, log)
+
 	if result.Status >= 500 || result.Status == 0 {
 		telemetry.ObserveRoute(org, "proxy", "error", time.Since(start))
 		recordCH(ch, org, resp, payload, time.Since(start), false, retries)
@@ -197,10 +250,6 @@ func handleProxy(w http.ResponseWriter, r *http.Request, cp agentmeshv1.AgentMes
 		return
 	}
 
-	// Prefer actual upstream destination after failover for analytics.
-	if result.DestinationID != "" {
-		resp.DestinationAgentId = result.DestinationID
-	}
 	for k, vals := range result.Header {
 		for _, v := range vals {
 			w.Header().Add(k, v)
@@ -216,7 +265,25 @@ func handleProxy(w http.ResponseWriter, r *http.Request, cp agentmeshv1.AgentMes
 	recordCH(ch, org, resp, payload, time.Since(start), ok, retries)
 }
 
+func reportOutcome(ctx context.Context, cp agentmeshv1.AgentMeshClient, org, agentID string, d time.Duration, success bool, log *zap.Logger) {
+	if agentID == "" || cp == nil {
+		return
+	}
+	_, err := cp.ReportRouteOutcome(ctx, &agentmeshv1.RouteOutcome{
+		OrgId:     org,
+		AgentId:   agentID,
+		LatencyMs: float64(d.Milliseconds()),
+		Success:   success,
+	})
+	if err != nil {
+		log.Debug("report route outcome", zap.Error(err), zap.String("agent", agentID))
+	}
+}
+
 func headerOrg(r *http.Request) string {
+	if p, ok := auth.PrincipalFrom(r.Context()); ok && p.OrgID != "" {
+		return p.OrgID
+	}
 	if o := r.Header.Get("X-Org-ID"); o != "" {
 		return o
 	}

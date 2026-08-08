@@ -3,6 +3,7 @@ package rest
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"sort"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	agentmeshv1 "github.com/agentmesh/agentmesh/gen/agentmesh/v1"
 	"github.com/agentmesh/agentmesh/internal/auth"
+	"github.com/agentmesh/agentmesh/internal/billing"
 	"github.com/agentmesh/agentmesh/internal/grpcserver"
 	"github.com/agentmesh/agentmesh/internal/inference"
 	"github.com/agentmesh/agentmesh/internal/keymint"
@@ -22,24 +24,40 @@ import (
 )
 
 type Gateway struct {
-	grpcAddr string
-	auth     *auth.Service
-	policies *policy.Store
-	registry *registry.Store
-	keymint  *keymint.Facade
-	infer    *inference.Client
-	catalog  *models.Catalog
+	grpcAddr      string
+	auth          *auth.Service
+	policies      *policy.Store
+	registry      *registry.Store
+	keymint       *keymint.Facade
+	infer         *inference.Client
+	catalog       *models.Catalog
+	billing       *billing.StatusStore
+	orgCustomers  map[string]string
+	webhookSecret string
 }
 
-func NewGateway(grpcAddr string, authSvc *auth.Service, policies *policy.Store, reg *registry.Store, km *keymint.Facade, catalog *models.Catalog) *Gateway {
+func NewGateway(
+	grpcAddr string,
+	authSvc *auth.Service,
+	policies *policy.Store,
+	reg *registry.Store,
+	km *keymint.Facade,
+	catalog *models.Catalog,
+	billingStatus *billing.StatusStore,
+	orgCustomers map[string]string,
+	webhookSecret string,
+) *Gateway {
 	return &Gateway{
-		grpcAddr: grpcAddr,
-		auth:     authSvc,
-		policies: policies,
-		registry: reg,
-		keymint:  km,
-		infer:    inference.NewClient(),
-		catalog:  catalog,
+		grpcAddr:      grpcAddr,
+		auth:          authSvc,
+		policies:      policies,
+		registry:      reg,
+		keymint:       km,
+		infer:         inference.NewClient(),
+		catalog:       catalog,
+		billing:       billingStatus,
+		orgCustomers:  orgCustomers,
+		webhookSecret: webhookSecret,
 	}
 }
 
@@ -56,6 +74,7 @@ func (g *Gateway) Routes() chi.Router {
 	r.Route("/v1", func(v1 chi.Router) {
 		v1.Post("/auth/register", g.registerAuth)
 		v1.Post("/auth/login", g.loginAuth)
+		v1.Post("/billing/stripe/webhook", g.stripeWebhook)
 
 		v1.Group(func(protected chi.Router) {
 			protected.Use(g.authMiddleware)
@@ -66,6 +85,7 @@ func (g *Gateway) Routes() chi.Router {
 			protected.Post("/orgs/{org}/keys", g.createOrgKey)
 			protected.Get("/orgs/{org}/keys", g.listOrgKeys)
 			protected.Delete("/orgs/{org}/keys/{key_id}", g.revokeOrgKey)
+			protected.Get("/orgs/{org}/billing", g.withRole(auth.RoleAdmin, g.getOrgBilling))
 
 			protected.Post("/agents/register", g.withRole(auth.RoleOperator, g.registerAgent))
 			protected.Get("/agents/discover", g.withRole(auth.RoleViewer, g.discoverAgents))
@@ -86,6 +106,63 @@ func (g *Gateway) Routes() chi.Router {
 		})
 	})
 	return r
+}
+
+func (g *Gateway) stripeWebhook(w http.ResponseWriter, r *http.Request) {
+	if g.billing == nil {
+		writeJSON(w, http.StatusServiceUnavailable, errBody("BILLING_UNAVAILABLE", "billing store unavailable"))
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, errBody("INVALID_BODY", err.Error()))
+		return
+	}
+	if err := billing.VerifyStripeSignature(body, r.Header.Get("Stripe-Signature"), g.webhookSecret, 0); err != nil {
+		writeJSON(w, http.StatusUnauthorized, errBody("INVALID_SIGNATURE", err.Error()))
+		return
+	}
+	var ev billing.StripeEvent
+	if err := json.Unmarshal(body, &ev); err != nil {
+		writeJSON(w, http.StatusBadRequest, errBody("INVALID_JSON", err.Error()))
+		return
+	}
+	orgID, st, reason, err := billing.ApplyStripeEvent(ev, g.orgCustomers)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, errBody("EVENT_PARSE", err.Error()))
+		return
+	}
+	if orgID == "" || st == "" {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ignored"})
+		return
+	}
+	if err := g.billing.Put(r.Context(), billing.OrgBillingStatus{
+		OrgID:  orgID,
+		Status: st,
+		Reason: reason,
+	}); err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody("STORE_FAILED", err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "org_id": orgID, "billing_status": st})
+}
+
+func (g *Gateway) getOrgBilling(w http.ResponseWriter, r *http.Request) {
+	org := chi.URLParam(r, "org")
+	org, ok := enforceOrg(w, r, org)
+	if !ok {
+		return
+	}
+	if g.billing == nil {
+		writeJSON(w, http.StatusServiceUnavailable, errBody("BILLING_UNAVAILABLE", "billing store unavailable"))
+		return
+	}
+	st, err := g.billing.Get(r.Context(), org)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody("INTERNAL", err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, st)
 }
 
 func (g *Gateway) withRole(min auth.Role, h http.HandlerFunc) http.HandlerFunc {

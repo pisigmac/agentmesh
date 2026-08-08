@@ -4,6 +4,8 @@ Step-by-step manual QA for AgentMesh on a developer machine. Use this after code
 
 **Time:** ~45–60 minutes for the full pass (API + UI + observability). A **smoke pass** (sections 1–5 only) takes ~15 minutes.
 
+**Automated API subset:** with the stack up, run [`scripts/dry-run-design-partner.sh`](../scripts/dry-run-design-partner.sh) (health, auth, discover, pin, audit, stream, chaos unit). Expand with [`tests/load/smoke.sh`](../tests/load/smoke.sh). UI / proxy failover rows below remain manual.
+
 ---
 
 ## Prerequisites
@@ -174,15 +176,15 @@ curl -s "${HDR[@]}" \
 
 **Expected:** At least one agent; fields include `agent_id`, `agent_type`, `capabilities`, `rank_score`, `org_id`.
 
-### 5.2 Discover as `default` org (global catalog)
+### 5.2 Discover as `default` org (aggregation is opt-in)
 
-Org `default` aggregates agents from **all** tenants in etcd.
+When `AGGREGATE_DEFAULT_ORG=true` (default in development), org `default` unions agents from **all** tenants — demo convenience only. With aggregation **off** (always when `ENV=production`), discover returns only agents registered under `default` (E21).
 
 ```bash
 curl -s "${HDR[@]}" "${CP}/v1/agents/discover?limit=256" | jq '[.agents[].agent_type] | unique'
 ```
 
-**Expected:** Multiple adapter types (e.g. `cursor`, `claude_code`, …).
+**Expected (aggregation on):** Multiple adapter types if seeds use multiple orgs. **Expected (aggregation off):** Only `default`-org agents.
 
 ### 5.3 Route request
 
@@ -263,7 +265,7 @@ Open **`http://localhost:43000`** (Docker) or run `./scripts/start-frontend-dev.
 
 | Step | Action | Expected |
 |------|--------|----------|
-| 1 | Org **default (all agents)** | Agent dropdown lists all seeded agents |
+| 1 | Org **default** (aggregate when enabled) | Agent dropdown lists seeded agents for that scope |
 | 2 | Note count **All agents (N)** | N ≥ 9 |
 | 3 | Navigate to **Route debugger**, then back to **Agents** | Same count; table still populated |
 | 4 | Switch browser tab away 2+ minutes, return, **Refresh** | Agents still present (requires `-persistent` seed + current control plane) |
@@ -389,7 +391,8 @@ REMOVE_VOLUMES=1 ./scripts/stop-all.sh
 | Agents visible once, empty after ~30s or tab change | Old ephemeral registrations | Rebuild CP, `./scripts/seed-all-agents.sh` (uses `-persistent`) |
 | CORS errors in browser | Old control plane image | Rebuild/restart control plane; hard-refresh UI |
 | 401 on `/v1/*` | Wrong key or org | Settings: `agentmesh-dev-key`, org `default`; dev key works for other org headers |
-| Discover returns 0 | No seed or wrong org | Run seed; use org `default` for global catalog |
+| Discover returns 0 | No seed or wrong org | Run seed; with aggregation off, register agents under your org |
+| Dataplane 401 | Missing Bearer | Pass same `Authorization` as CP; `/health` stays open |
 | Frontend can’t reach API | Wrong URL / port | `48080` not `8080` on host; see `deploy/ports.env` |
 | `status-all` FAIL frontend | Container still starting | Wait 30s, rerun `./scripts/status-all.sh` |
 

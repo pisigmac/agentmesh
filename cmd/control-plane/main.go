@@ -17,10 +17,10 @@ import (
 	"github.com/agentmesh/agentmesh/internal/circuit"
 	"github.com/agentmesh/agentmesh/internal/config"
 	"github.com/agentmesh/agentmesh/internal/grpcserver"
-	"github.com/agentmesh/agentmesh/internal/policy"
-	"github.com/agentmesh/agentmesh/internal/ratelimit"
 	"github.com/agentmesh/agentmesh/internal/keymint"
 	"github.com/agentmesh/agentmesh/internal/models"
+	"github.com/agentmesh/agentmesh/internal/policy"
+	"github.com/agentmesh/agentmesh/internal/ratelimit"
 	"github.com/agentmesh/agentmesh/internal/registry"
 	"github.com/agentmesh/agentmesh/internal/rest"
 	"github.com/agentmesh/agentmesh/internal/router"
@@ -43,6 +43,11 @@ func main() {
 		log.Fatal("etcd", zap.Error(err))
 	}
 	defer reg.Close()
+	reg.SetAggregateDefaultOrg(cfg.AggregateDefaultOrg)
+	log.Info("registry tenancy",
+		zap.String("env", cfg.Env),
+		zap.Bool("aggregate_default_org", cfg.AggregateDefaultOrg),
+	)
 
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     cfg.Redis.Addr,
@@ -94,6 +99,12 @@ func main() {
 		log.Info("stripe metering enabled", zap.String("meter", cfg.Stripe.MeterEventName))
 	}
 
+	billingStatus, err := billing.NewStatusStore(cfg.Etcd.Endpoints, cfg.Etcd.Prefix)
+	if err != nil {
+		log.Fatal("billing status store", zap.Error(err))
+	}
+	defer billingStatus.Close()
+
 	policies, err := policy.NewStore(cfg.Etcd.Endpoints, cfg.Etcd.Prefix, cfg)
 	if err != nil {
 		log.Fatal("policy store", zap.Error(err))
@@ -144,7 +155,7 @@ func main() {
 	}
 	log.Info("models catalog loaded", zap.String("path", catalog.Path()), zap.Int("models", len(catalog.Models())), zap.Int("providers", len(catalog.Providers())))
 
-	srv := grpcserver.New(reg, policies, engine, br, limiter, cfg, meter)
+	srv := grpcserver.New(reg, policies, engine, br, limiter, cfg, meter, billingStatus)
 
 	grpcServer := grpc.NewServer()
 	agentmeshv1.RegisterAgentMeshServer(grpcServer, srv)
@@ -160,7 +171,17 @@ func main() {
 		}
 	}()
 
-	gw := rest.NewGateway(fmt.Sprintf("localhost:%d", cfg.ControlPlane.GRPCPort), authSvc, policies, reg, kmFacade, catalog)
+	gw := rest.NewGateway(
+		fmt.Sprintf("localhost:%d", cfg.ControlPlane.GRPCPort),
+		authSvc,
+		policies,
+		reg,
+		kmFacade,
+		catalog,
+		billingStatus,
+		billing.ParseOrgCustomers(cfg.Stripe.OrgCustomers),
+		cfg.Stripe.WebhookSecret,
+	)
 	httpSrv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.ControlPlane.HTTPPort),
 		Handler: mountHTTP(gw.Routes()),
@@ -186,11 +207,4 @@ func mountHTTP(r http.Handler) http.Handler {
 	mux.Handle("/metrics", promhttp.Handler())
 	mux.Handle("/", r)
 	return mux
-}
-
-func getenv(k, def string) string {
-	if v := os.Getenv(k); v != "" {
-		return v
-	}
-	return def
 }

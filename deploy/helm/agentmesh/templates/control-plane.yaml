@@ -23,6 +23,10 @@ spec:
             - name: grpc
               containerPort: {{ .Values.controlPlane.grpcPort }}
           env:
+            - name: ENV
+              value: {{ .Values.env | quote }}
+            - name: AGGREGATE_DEFAULT_ORG
+              value: {{ .Values.aggregateDefaultOrg | quote }}
             - name: ETCD_ENDPOINTS
               value: {{ join "," .Values.etcd.endpoints | quote }}
             - name: REDIS_ADDR
@@ -55,6 +59,13 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.stripe.secretKeyExistingSecret }}
                   key: secret_key
+            {{- end }}
+            {{- if .Values.stripe.webhookSecretExistingSecret }}
+            - name: STRIPE_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.stripe.webhookSecretExistingSecret }}
+                  key: webhook_secret
             {{- end }}
             - name: TRACELENS_ENABLED
               value: {{ .Values.tracelens.enabled | quote }}

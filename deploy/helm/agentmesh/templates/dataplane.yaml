@@ -27,6 +27,10 @@ spec:
               value: "{{ .Values.dataPlane.httpPort }}"
             - name: DATAPLANE_FAILOVER
               value: "{{ .Values.dataPlane.failover }}"
+            - name: DATAPLANE_AUTH_ENABLED
+              value: "{{ .Values.dataPlane.authEnabled }}"
+            - name: ETCD_ENDPOINTS
+              value: {{ join "," .Values.etcd.endpoints | quote }}
             - name: REDIS_ADDR
               value: {{ .Values.redis.addr | quote }}
             - name: CLICKHOUSE_ADDR

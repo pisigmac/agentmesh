@@ -8,7 +8,8 @@ Configuration is loaded from environment variables in `internal/config/config.go
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ENV` | `development` | Environment name |
+| `ENV` | `development` | Environment name. When `production`, forces `AGGREGATE_DEFAULT_ORG=false` (E21) |
+| `AGGREGATE_DEFAULT_ORG` | `true` (non-prod) | When true, `ListByOrg("default")` unions all tenants. **Forced off** if `ENV=production` |
 
 ## Control plane
 
@@ -28,6 +29,7 @@ Configuration is loaded from environment variables in `internal/config/config.go
 | `DATAPLANE_MAX_RETRIES` | `2` | Max retries after first attempt (`attempts = max_retries + 1`) |
 | `DATAPLANE_FAILOVER` | `true` | On upstream 5xx/timeout, walk `fallback_chain` (records circuit failures per destination) |
 | `DATAPLANE_ROUTE_CACHE_TTL_MS` | `500` | Route decision cache TTL |
+| `DATAPLANE_AUTH_ENABLED` | `true` | Require Bearer JWT/API key on `/v1/route` and `/v1/proxy/*` (`/health` + `/metrics` stay open). Needs etcd + `AUTH_JWT_SECRET` / org keys |
 
 ## etcd
 
@@ -114,7 +116,7 @@ Staging: set `GUARDLOOP_ENABLED=true`, `SCORE_PROVIDER=guardloop` (or `auto`), a
 | `CIRCUIT_WINDOW_SECONDS` | `60` | Sliding window |
 | `CIRCUIT_HALF_OPEN_SECONDS` | `30` | Time until half-open probe |
 
-## Stripe metering (optional)
+## Stripe metering + webhooks (optional)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -122,9 +124,9 @@ Staging: set `GUARDLOOP_ENABLED=true`, `SCORE_PROVIDER=guardloop` (or `auto`), a
 | `STRIPE_SECRET_KEY` | `` | `sk_test_…` / `sk_live_…` |
 | `STRIPE_METER_EVENT_NAME` | `agentmesh_routes` | Stripe Billing Meter event name |
 | `STRIPE_ORG_CUSTOMERS` | `` | `org_id:cus_xxx,org2:cus_yyy` map |
-| `STRIPE_WEBHOOK_SECRET` | `` | Reserved for webhook verification |
+| `STRIPE_WEBHOOK_SECRET` | `` | `whsec_…` for `POST /v1/billing/stripe/webhook` |
 
-Every successful control-plane route inserts ClickHouse `billing_events` (idempotent `stripe_event_id=route:{trace_id}`) and, when enabled + customer mapped, calls Stripe `POST /v1/billing/meter_events`. See [ops/01-PAYMENTS.md](../ops/01-PAYMENTS.md).
+Every successful control-plane route inserts ClickHouse `billing_events` (idempotent `stripe_event_id=route:{trace_id}`) and, when enabled + customer mapped, calls Stripe `POST /v1/billing/meter_events`. Webhooks set org billing status (`ok` / `past_due` / `blocked`) used for soft warn / hard reject on route. See [ops/01-PAYMENTS.md](../ops/01-PAYMENTS.md).
 
 ## Feature flags
 
@@ -132,7 +134,7 @@ Any `FF_<NAME>` env var read by `internal/featureflags` (values `1`, `true` enab
 
 ## Helm
 
-Chart: [`deploy/helm/agentmesh`](../deploy/helm/agentmesh). Templates cover control-plane, dataplane, frontend, Services, PDB/HPA, ServiceMonitors. Staging: `-f values.yaml -f values-staging.yaml`. Map Stripe secret via `stripe.secretKeyExistingSecret=agentmesh-stripe` (key `secret_key`).
+Chart: [`deploy/helm/agentmesh`](../deploy/helm/agentmesh). Single chart MVP (CP/DP/frontend) — multi-chart split remains a follow-up. Staging: `-f values.yaml -f values-staging.yaml`. Map Stripe via `stripe.secretKeyExistingSecret` (`secret_key`) and `stripe.webhookSecretExistingSecret` (`webhook_secret`).
 
 ## Secrets handling
 

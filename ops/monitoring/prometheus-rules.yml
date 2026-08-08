@@ -45,3 +45,49 @@ groups:
         annotations:
           summary: No AgentMesh routes observed
           description: Zero route throughput for 30 minutes—possible outage or misconfigured scraper.
+
+      # Multi-window burn-rate for 99% route success SLO (1% error budget).
+      # Fast burn: ~14.4× budget over 1h → page.
+      - alert: AgentMeshRouteErrorBudgetBurnFast
+        expr: |
+          (
+            sum(rate(agentmesh_route_total{status="error"}[5m]))
+            /
+            clamp_min(sum(rate(agentmesh_route_total[5m])), 1e-9)
+          )
+          /
+          0.01
+          > 14.4
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Fast burn of AgentMesh route error budget
+          description: Route error rate is burning the 1% monthly budget quickly (see ops/11-SLO.md).
+
+      # Slow burn: ~6× budget over 6h → ticket.
+      - alert: AgentMeshRouteErrorBudgetBurnSlow
+        expr: |
+          (
+            sum(rate(agentmesh_route_total{status="error"}[30m]))
+            /
+            clamp_min(sum(rate(agentmesh_route_total[30m])), 1e-9)
+          )
+          /
+          0.01
+          > 6
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Slow burn of AgentMesh route error budget
+          description: Sustained elevated route errors vs 99% success SLO.
+
+      - alert: AgentMeshControlPlaneReadyBurn
+        expr: avg_over_time(up{job="agentmesh-control-plane"}[1h]) < 0.995
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Control plane availability below 99.5% hourly
+          description: Scraped uptime for control plane dipped below the availability SLO window.
